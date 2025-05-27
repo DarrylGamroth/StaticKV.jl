@@ -14,7 +14,7 @@ using Clocks
     age::Int => (value => 0, access => AccessMode.READABLE_WRITABLE)
     ssn::String => (access => AccessMode.READABLE)
     address::String => (
-        read_callback => (obj, name, val) -> "REDACTED", 
+        read_callback => (obj, name, val) -> "REDACTED",
         write_callback => (obj, name, val) -> uppercase(val)
     )
 end
@@ -86,29 +86,38 @@ end
     return value
 end
 
-# Mutable struct with concrete type parameters
-mutable struct PropertySpecs{T,RCB<:Function,WCB<:Function}
+"""
+    PropertySpecs{T}
+
+A struct that holds all the information for a managed property.
+This includes the current value, access flags, read/write callbacks and last update timestamp.
+
+The struct is parameterized on the value type `T` but not on the callback types
+to better support anonymous functions.
+"""
+mutable struct PropertySpecs{T}
     value::Union{Nothing,T}
     access_flags::AccessMode.AccessModeType
-    read_callback::RCB
-    write_callback::WCB
+    read_callback::Function  # Using Function rather than a specific function type allows for anonymous functions
+    write_callback::Function
     last_update::Int64
-end
 
-function PropertySpecs{T}(
-    value::Union{Nothing,T},
-    access_flags::AccessMode.AccessModeType,
-    read_callback::Function,
-    write_callback::Function,
-    last_update::Int64
-) where {T}
-    return PropertySpecs{T,typeof(read_callback),typeof(write_callback)}(
-        value,
-        access_flags,
-        read_callback,
-        write_callback,
-        last_update
-    )
+    # Constructor
+    function PropertySpecs{T}(
+        value::Union{Nothing,T},
+        access_flags::AccessMode.AccessModeType,
+        read_callback::Function,
+        write_callback::Function,
+        last_update::Int64
+    ) where {T}
+        new{T}(
+            value,
+            access_flags,
+            read_callback,
+            write_callback,
+            last_update
+        )
+    end
 end
 
 # Helper function to process attributes
@@ -187,7 +196,7 @@ end
         prop2::Type2 => (access => AccessMode.READABLE_WRITABLE)
         prop3::Type3 => (
             value => default_value,
-            access => AccessMode.READABLE, 
+            access => AccessMode.READABLE,
             read_callback => custom_read_fn,
             write_callback => custom_write_fn
         )
@@ -235,26 +244,14 @@ macro properties(struct_name, block)
     prop_read_cbs = [p[:read_callback] for p in props]
     prop_write_cbs = [p[:write_callback] for p in props]
 
-    # Add these lines after extracting property information
-    prop_read_cb_types = []
-    prop_write_cb_types = []
-
     # Create struct body
     struct_body = Expr(:block)
 
     # Add property fields
     for i in 1:length(props)
-        # Determine the exact read callback type
-        read_cb_type = :(typeof($(prop_read_cbs[i])))
-        push!(prop_read_cb_types, read_cb_type)  # Store for later use
-
-        # Determine the exact write callback type
-        write_cb_type = :(typeof($(prop_write_cbs[i])))
-        push!(prop_write_cb_types, write_cb_type)  # Store for later use
-
-        # Use the specific callback types in the field definition
+        # Use the PropertySpecs struct with simplified type parameters
         push!(struct_body.args, Expr(:(::), prop_names[i],
-            :(ManagedProperties.PropertySpecs{$(prop_types[i]),$read_cb_type,$write_cb_type})))
+            :(ManagedProperties.PropertySpecs{$(prop_types[i])})))
     end
 
     # Add clock field
@@ -418,7 +415,7 @@ macro properties(struct_name, block)
 
         """
             property_type(::Type{T}, s::Symbol) where T
-            
+
         Get the type of a property from a type.
 
         # Arguments
@@ -442,7 +439,7 @@ macro properties(struct_name, block)
 
         """
             property_type(p, s::Symbol)
-            
+
         Get the type of a property from an instance.
 
         # Arguments
@@ -713,10 +710,11 @@ macro properties(struct_name, block)
                 # Apply the function to the value
                 result = f(value)
 
-                # Always write back the value through the write callback
-                prop_meta.value = prop_meta.write_callback(p, s, value)
+                # Note: This implementation does NOT update the property with
+                # the function result - it keeps the original value.
+                # For mutable types, the function may have modified the value in-place.
 
-                # Update the timestamp
+                # Update the timestamp since we might have modified a mutable value in-place
                 prop_meta.last_update = Clocks.time_nanos(p.clock)
 
                 return result
@@ -843,7 +841,7 @@ macro properties(struct_name, block)
         """
             reset_property!(p, s::Symbol)
 
-        Reset a property to an unset state by setting its value to `nothing` and 
+        Reset a property to an unset state by setting its value to `nothing` and
         its last update timestamp to -1.
 
         # Arguments
@@ -882,29 +880,29 @@ macro properties(struct_name, block)
         end
 
         # Precompilation directives for general property operations
-        Base.precompile(Tuple{typeof(get_property), $(struct_name), Symbol})
-        Base.precompile(Tuple{typeof(set_property!), $(struct_name), Symbol, Any})
-        Base.precompile(Tuple{typeof(reset_property!), $(struct_name), Symbol})
-        Base.precompile(Tuple{typeof(is_set), $(struct_name), Symbol})
-        Base.precompile(Tuple{typeof(all_properties_set), $(struct_name)})
-        Base.precompile(Tuple{typeof(is_readable), $(struct_name), Symbol})
-        Base.precompile(Tuple{typeof(is_writable), $(struct_name), Symbol})
-        Base.precompile(Tuple{typeof(last_update), $(struct_name), Symbol})
-        Base.precompile(Tuple{typeof(property_type), $(struct_name), Symbol})
+        Base.precompile(Tuple{typeof(get_property),$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(set_property!),$(struct_name),Symbol,Any})
+        Base.precompile(Tuple{typeof(reset_property!),$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(is_set),$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(all_properties_set),$(struct_name)})
+        Base.precompile(Tuple{typeof(is_readable),$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(is_writable),$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(last_update),$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(property_type),$(struct_name),Symbol})
 
         # Precompile with_property variants
-        Base.precompile(Tuple{typeof(with_property), Function, $(struct_name), Symbol})
-        Base.precompile(Tuple{typeof(with_property!), Function, $(struct_name), Symbol})
+        Base.precompile(Tuple{typeof(with_property),Function,$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(with_property!),Function,$(struct_name),Symbol})
 
         # Property-specific precompilation
-        $([:( 
+        $([:(
             # Type-specific property operations
-            Base.precompile(Tuple{typeof(get_property), $(struct_name), typeof($(QuoteNode(name)))});
-            Base.precompile(Tuple{typeof(set_property!), $(struct_name), typeof($(QuoteNode(name))), $(prop_types[i])});
-            Base.precompile(Tuple{typeof(reset_property!), $(struct_name), typeof($(QuoteNode(name)))});
-            Base.precompile(Tuple{typeof(is_set), $(struct_name), typeof($(QuoteNode(name)))});
-            Base.precompile(Tuple{typeof(is_readable), $(struct_name), typeof($(QuoteNode(name)))});
-            Base.precompile(Tuple{typeof(is_writable), $(struct_name), typeof($(QuoteNode(name)))});
+            Base.precompile(Tuple{typeof(get_property),$(struct_name),typeof($(QuoteNode(name)))});
+            Base.precompile(Tuple{typeof(set_property!),$(struct_name),typeof($(QuoteNode(name))),$(prop_types[i])});
+            Base.precompile(Tuple{typeof(reset_property!),$(struct_name),typeof($(QuoteNode(name)))});
+            Base.precompile(Tuple{typeof(is_set),$(struct_name),typeof($(QuoteNode(name)))});
+            Base.precompile(Tuple{typeof(is_readable),$(struct_name),typeof($(QuoteNode(name)))});
+            Base.precompile(Tuple{typeof(is_writable),$(struct_name),typeof($(QuoteNode(name)))})
         ) for (i, name) in enumerate(prop_names)]...)
     end
 
