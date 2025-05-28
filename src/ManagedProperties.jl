@@ -101,42 +101,21 @@ allowing it to remain concrete even with anonymous functions.
 """
 mutable struct PropertySpecs{T,R<:Function,W<:Function}
     value::Union{Nothing,T}
-    access_flags::AccessMode.AccessModeType
-    read_callback::R
-    write_callback::W
+    const access_flags::AccessMode.AccessModeType
+    const read_callback::R
+    const write_callback::W
     last_update::Int64
-
-    # Constructor
-    function PropertySpecs{T,R,W}(
-        value::Union{Nothing,T},
-        access_flags::AccessMode.AccessModeType,
-        read_callback::R,
-        write_callback::W,
-        last_update::Int64
-    ) where {T,R<:Function,W<:Function}
-        new{T,R,W}(
-            value,
-            access_flags,
-            read_callback,
-            write_callback,
-            last_update
-        )
-    end
-
-    # Convenience constructor that infers callback types
-    function PropertySpecs{T}(
-        value::Union{Nothing,T},
-        access_flags::AccessMode.AccessModeType,
-        read_callback::R,
-        write_callback::W,
-        last_update::Int64
-    ) where {T,R<:Function,W<:Function}
-        PropertySpecs{T,R,W}(value, access_flags, read_callback, write_callback, last_update)
-    end
 end
 
-# Additional constructors for compatibility with existing code
-PropertySpecs{T}(ps::PropertySpecs{T,R,W}) where {T,R,W} = ps
+function PropertySpecs{T}(
+    value::Union{Nothing,T},
+    access_flags::AccessMode.AccessModeType,
+    read_callback::R,
+    write_callback::W,
+    last_update::Int64
+) where {T,R<:Function,W<:Function}
+    PropertySpecs{T,R,W}(value, access_flags, read_callback, write_callback, last_update)
+end
 
 # Helper function to process attributes
 function process_attribute!(result, key, value)
@@ -158,11 +137,11 @@ end
 function parse_property_def(expr)
     result = Dict{Symbol,Any}()
 
-    # Initialize with defaults - use symbol references for callbacks so they can be resolved at runtime
+    # Initialize with defaults
     result[:value] = nothing
     result[:access] = :(AccessMode.READABLE_WRITABLE)
-    result[:read_callback] = :(default_read_callback)
-    result[:write_callback] = :(default_write_callback)
+    result[:read_callback] = nothing
+    result[:write_callback] = nothing
 
     # Helper function to check if type expression is a Union
     function is_union_type(type_expr)
@@ -230,7 +209,7 @@ function parse_property_def(expr)
 end
 
 """
-    @properties struct_name begin
+    @properties struct_name [default_read_callback=custom_reader] [default_write_callback=custom_writer] begin
         prop1::Type1
         prop2::Type2 => (access => AccessMode.READABLE_WRITABLE)
         prop3::Type3 => (
@@ -245,6 +224,8 @@ Create a struct with managed properties that include access control, custom call
 
 # Arguments
 - `struct_name`: The name of the struct to create
+- `default_read_callback`: Optional global read callback to use as default for all properties
+- `default_write_callback`: Optional global write callback to use as default for all properties
 - `block`: A block containing property definitions
 
 # Property definition formats
@@ -261,9 +242,39 @@ Create a struct with managed properties that include access control, custom call
 - Creates a new type with the specified properties and generates accessor functions
 """
 # Main properties macro
-macro properties(struct_name, block)
-    if block.head != :block
+macro properties(struct_name, args...)
+    # Check for keyword arguments before the block
+    default_read_callback = nothing
+    default_write_callback = nothing
+    
+    # The last argument should always be the property block
+    if length(args) < 1
         error("@properties requires a begin...end block after the struct name")
+    end
+    
+    # Handle keyword arguments passed directly to the macro
+    block = args[end]
+    if length(args) > 1
+        # Process keyword arguments (default callbacks)
+        for i in 1:length(args)-1
+            arg = args[i]
+            if arg isa Expr && arg.head == :(=)
+                key, value = arg.args
+                if key == :default_read_callback
+                    default_read_callback = value isa Symbol ? :(Main.$value) : value
+                elseif key == :default_write_callback
+                    default_write_callback = value isa Symbol ? :(Main.$value) : value
+                else
+                    error("Unknown keyword argument: $key")
+                end
+            else
+                error("Expected keyword arguments before the property block")
+            end
+        end
+    end
+    
+    if block.head != :block
+        error("@properties requires a begin...end block for property definitions")
     end
 
     # Extract property definitions
@@ -280,57 +291,41 @@ macro properties(struct_name, block)
     prop_types = [p[:type] for p in props]
     prop_values = [p[:value] for p in props]
     prop_access = [p[:access] for p in props]
-    prop_read_cbs = [p[:read_callback] for p in props]
-    prop_write_cbs = [p[:write_callback] for p in props]
+    prop_read_cbs = Any[p[:read_callback] for p in props]
+    prop_write_cbs = Any[p[:write_callback] for p in props]
 
-    # Create struct body
+    # Build type parameter list for all PropertySpecs and clock
+    ps_type_syms = [Symbol(:PS, i) for i in 1:length(props)]
+    all_type_syms = [ps_type_syms...,:C]
+    struct_type_params = Expr(:curly, struct_name, [Expr(:<:, ps, :(ManagedProperties.PropertySpecs)) for ps in ps_type_syms]..., Expr(:<:, :C, :(Clocks.AbstractClock)))
+
+    # Build the struct body with parametric PropertySpecs types
     struct_body = Expr(:block)
-
-    # Add property fields for each property with specific callback types
     for i in 1:length(props)
-        # Use a more flexible field type that can accept any PropertySpecs variant with the right value type
-        push!(struct_body.args, Expr(:(::), prop_names[i],
-            :(ManagedProperties.PropertySpecs{$(prop_types[i]),R,W} where {R<:Function,W<:Function})))
+        push!(struct_body.args, Expr(:(::), prop_names[i], Symbol(:PS, i)))
     end
+    push!(struct_body.args, :(_clock::C))
 
-    # Add clock field
-    push!(struct_body.args, :(clock::C))
-
-    # Create the parameterized constructor
+    # Build the parametric constructor (infers PropertySpecs types)
     param_constructor = quote
-        function $(struct_name)(clock::C=Clocks.EpochClock();
-            default_read_callback=ManagedProperties._default_read_callback,
-            default_write_callback=ManagedProperties._default_write_callback) where {C<:AbstractClock}
-
-            # Create PropertySpecs instances with stored type information and inferred callback types
+        function $(struct_name)(clock::C=Clocks.EpochClock()) where {C<:Clocks.AbstractClock}
             $([:($(prop_names[i]) = let
-                value = $(prop_values[i] === nothing ? :(nothing) : prop_values[i])
+                value = $(isnothing(prop_values[i]) ? :(nothing) : prop_values[i])
                 access = convert(AccessMode.AccessModeType, $(prop_access[i]))
-
-                # Get callbacks, using constructor parameters for defaults
-                read_cb = $(prop_read_cbs[i] === :default_read_callback ?
-                            :(default_read_callback) : prop_read_cbs[i])
-                write_cb = $(prop_write_cbs[i] === :default_write_callback ?
-                             :(default_write_callback) : prop_write_cbs[i])
-
-                timestamp = $(prop_values[i] === nothing ? :(-1) : :(Clocks.time_nanos(clock)))
-
-                # Let Julia infer the exact callback types
-                ManagedProperties.PropertySpecs{$(prop_types[i])}(
-                    value, access, read_cb, write_cb, timestamp
-                )
+                read_cb = $(isnothing(prop_read_cbs[i]) ? (isnothing(default_read_callback) ? :(ManagedProperties._default_read_callback) : default_read_callback) : prop_read_cbs[i])
+                write_cb = $(isnothing(prop_write_cbs[i]) ? (isnothing(default_write_callback) ? :(ManagedProperties._default_write_callback) : default_write_callback) : prop_write_cbs[i])
+                timestamp = $(isnothing(prop_values[i]) ? :(-1) : :(Clocks.time_nanos(clock)))
+                ManagedProperties.PropertySpecs{$(prop_types[i])}(value, access, read_cb, write_cb, timestamp)
             end) for i in 1:length(props)]...)
-
-            # Use new function to create the instance
-            return new{C}($(prop_names...), clock)
+            return new{ $( [:(typeof($(prop_names[i]))) for i in 1:length(props)]... ), C }($(prop_names...), clock)
         end
     end
 
-    # Add both constructors to the struct body
-    push!(struct_body.args, param_constructor.args[2])  # Add the parameterized constructor
+    # Add the constructor to the struct body
+    push!(struct_body.args, param_constructor.args[2])
 
     # Create the complete struct definition
-    struct_def = Expr(:struct, true, Expr(:curly, struct_name, Expr(:<:, :C, :AbstractClock)), struct_body)
+    struct_def = Expr(:struct, true, struct_type_params, struct_body)
 
     # Generate property information
     prop_info = :(const $(Symbol("$(struct_name)_PROPS")) = (
@@ -360,12 +355,10 @@ macro properties(struct_name, block)
         - `true` if the property is set, `false` otherwise
         """
         @inline function is_set(p::$(struct_name), s::Symbol)
-            # Use the faster 'in' operator for property lookup
             names = $(Symbol("$(struct_name)_PROPS")).names
             if s in names
                 return !isnothing(getfield(p, s).value)
             end
-
             return false
         end
 
@@ -407,7 +400,6 @@ macro properties(struct_name, block)
         """
         @inline function get_property(p::$(struct_name), s::Symbol)
             names = $(Symbol("$(struct_name)_PROPS")).names
-
             if s in names
                 prop_meta = getfield(p, s)
 
@@ -443,7 +435,6 @@ macro properties(struct_name, block)
         @inline function set_property!(p::$(struct_name), s::Symbol, v)
             names = $(Symbol("$(struct_name)_PROPS")).names
             if s in names
-                # Get property metadata
                 prop_meta = getfield(p, s)
 
                 if !AccessMode.is_writable(prop_meta.access_flags)
@@ -454,7 +445,7 @@ macro properties(struct_name, block)
 
                 # Update the existing metadata with the transformed value
                 prop_meta.value = val
-                prop_meta.last_update = Clocks.time_nanos(p.clock)
+                prop_meta.last_update = Clocks.time_nanos(p._clock)
 
                 return val
             end
@@ -566,7 +557,6 @@ macro properties(struct_name, block)
         - `ErrorException` if the property is not found
         """
         @inline function last_update(p::$(struct_name), s::Symbol)
-            # Manual lookup with index-based iteration
             names = $(Symbol("$(struct_name)_PROPS")).names
             if s in names
                 return getfield(p, s).last_update
@@ -733,7 +723,6 @@ macro properties(struct_name, block)
         """
         # Mutating version for in-place operations (non-isbits types only)
         @inline function with_property!(f::Function, p::$(struct_name), s::Symbol)
-            # Manual lookup with index-based iteration
             names = $(Symbol("$(struct_name)_PROPS")).names
             if s in names
                 prop_meta = getfield(p, s)
@@ -758,10 +747,10 @@ macro properties(struct_name, block)
                 result = f(value)
 
                 # Call the write_callback on the original property value (not the transformed value)
-                prop_meta.write_callback(p, s, prop_meta.value)
+                prop_meta.write_callback(p, s, value)
 
-                # Update the timestamp since we might have modified a mutable value in-place
-                prop_meta.last_update = Clocks.time_nanos(p.clock)
+                # Update the timestamp
+                prop_meta.last_update = Clocks.time_nanos(p._clock)
 
                 return result
             end
@@ -861,7 +850,7 @@ macro properties(struct_name, block)
             result = f(values...)
             for s in properties
                 prop_meta = getfield(p, s)
-                prop_meta.last_update = Clocks.time_nanos(p.clock)
+                prop_meta.last_update = Clocks.time_nanos(p._clock)
             end
             return result
         end
@@ -888,10 +877,8 @@ macro properties(struct_name, block)
         ```
         """
         @inline function reset_property!(p::$(struct_name), s::Symbol)
-            # Manual lookup with index-based iteration
             names = $(Symbol("$(struct_name)_PROPS")).names
             if s in names
-                # Get property metadata
                 prop_meta = getfield(p, s)
 
                 if !AccessMode.is_writable(prop_meta.access_flags)

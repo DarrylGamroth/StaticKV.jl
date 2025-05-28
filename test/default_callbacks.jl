@@ -9,6 +9,11 @@ custom_write_cb(props, name, val::String) = uppercase(val)
 custom_write_cb(props, name, val::Number) = val  # Pass through for numbers
 
 # Create a simple structure with default properties
+@properties TestCustomDefaultCallbacks default_read_callback=custom_read_cb default_write_callback=custom_write_cb begin
+    name::String
+    age::Int
+end
+
 @properties TestDefaultCallbacks begin
     name::String
     age::Int
@@ -18,10 +23,7 @@ export test_default_callbacks
 
 function test_default_callbacks()
     # Create an instance with custom default callbacks
-    t = TestDefaultCallbacks(
-        default_read_callback=custom_read_cb, 
-        default_write_callback=custom_write_cb
-    )
+    t = TestCustomDefaultCallbacks()
 
     # Set properties
     set_property!(t, :name, "Alice")

@@ -2,27 +2,6 @@
 using Test
 using BenchmarkTools
 
-# Helper functions to warm up property accessors and avoid measuring JIT compilation allocations
-function warmup_get_property(obj, field)
-    for _ in 1:10
-        try
-            get_property(obj, field)
-        catch
-            # Ignore errors for unset properties
-        end
-    end
-end
-
-function warmup_set_property!(obj, field, value)
-    for _ in 1:10
-        try
-            set_property!(obj, field, value)
-        catch
-            # Ignore errors for read-only properties
-        end
-    end
-end
-
 # Test struct with various property types
 @properties AllocationTest begin
     bool_val::Bool => (value => true)
@@ -70,14 +49,6 @@ function test_allocations()
     t1 = AllocationTest()
     t2 = CallbackTest()
 
-    # Warm up all the tested properties
-    warmup_get_property(t1, :int_val)
-    warmup_get_property(t1, :float_val)
-    warmup_get_property(t1, :bool_val)
-    warmup_set_property!(t1, :int_val, 100)
-    warmup_set_property!(t1, :float_val, 2.71)
-    warmup_set_property!(t1, :bool_val, false)
-
     # Only keep one comprehensive isbits allocation testset (removes redundancy)
     @testset "get_property allocation - isbits (all)" begin
         for (field, val) in (
@@ -103,13 +74,7 @@ function test_allocations()
             set_property!(t1, field, val)
             b = @eval @benchmark get_property($t1, $(QuoteNode(field))) samples=10 evals=100
             @info "$(field) get_property allocations: $(b.memory) bytes"
-            if field in (:complex128_val, :int128_val, :uint128_val)
-                @test b.memory <= 96
-            elseif field in (:complex64_val, :float16_val, :float32_val)
-                @test b.memory <= 48
-            else
-                @test b.memory <= 32
-            end
+            @test b.memory == 0
             allocs = @allocated is_set(t1, field)
             @test allocs == 0
         end
@@ -138,59 +103,54 @@ function test_allocations()
         )
             b = @eval @benchmark set_property!($t1, $(QuoteNode(field)), $val) samples=10 evals=100
             @info "$(field) set_property! allocations: $(b.memory) bytes"
-            if field in (:complex128_val, :int128_val, :uint128_val)
-                @test b.memory <= 96
-            elseif field in (:complex64_val, :float16_val, :float32_val, :float_val)
-                @test b.memory <= 48
-            else
-                @test b.memory <= 32
-            end
+            @test b.memory == 0
         end
     end
 
     # Keep non-isbits and callback/mutable type allocation tests
     @testset "Symbol allocation" begin
-        warmup_get_property(t1, :symbol_val)
-        warmup_set_property!(t1, :symbol_val, :new_symbol)
-        for _ in 1:100
-            is_set(t1, :symbol_val)
-        end
         b = @benchmark get_property($t1, :symbol_val) samples=10 evals=100
         @info "Symbol get_property allocations: $(b.memory) bytes"
-        @test b.memory <= 16
+        @test b.memory == 0
         b = @benchmark set_property!($t1, :symbol_val, :new_symbol) samples=10 evals=100
         @info "Symbol set_property! allocations: $(b.memory) bytes"
-        @test b.memory <= 16
+        @test b.memory == 0
         b = @benchmark is_set($t1, :symbol_val) samples=10 evals=100
         @info "Symbol is_set allocations: $(b.memory) bytes"
-        @test b.memory <= 16
+        @test b.memory == 0
     end
 
     @testset "String allocation" begin
-        allocs = @allocated get_property(t1, :string_val)
-        @info "String get_property allocations: $allocs"
-        allocs = @allocated set_property!(t1, :string_val, "new_string")
-        @info "String set_property! allocations: $allocs"
-        allocs = @allocated is_set(t1, :string_val)
-        @test allocs == 0
+        allocs1 = @allocated get_property(t1, :string_val)
+        @info "String get_property allocations: $allocs1"
+        allocs2 = @allocated set_property!(t1, :string_val, "new_string")
+        @info "String set_property! allocations: $allocs2"
+        allocs3 = @allocated is_set(t1, :string_val)
+        @test allocs1 == 0
+        @test allocs2 == 0
+        @test allocs3 == 0
     end
 
     @testset "Vector allocation" begin
-        allocs = @allocated get_property(t1, :vector_val)
-        @info "Vector get_property allocations: $allocs"
-        allocs = @allocated set_property!(t1, :vector_val, [4, 5, 6])
-        @info "Vector set_property! allocations: $allocs"
-        allocs = @allocated is_set(t1, :vector_val)
-        @test allocs == 0
+        allocs1 = @allocated get_property(t1, :vector_val)
+        @info "Vector get_property allocations: $allocs1"
+        allocs2 = @allocated set_property!(t1, :vector_val, [4, 5, 6])
+        @info "Vector set_property! allocations: $allocs2"
+        allocs3 = @allocated is_set(t1, :vector_val)
+        @test allocs1 == 0
+        # Do not require allocs2 == 0: assigning a new array always allocates
+        @test allocs3 == 0
     end
 
     @testset "Matrix allocation" begin
-        allocs = @allocated get_property(t1, :matrix_val)
-        @info "Matrix get_property allocations: $allocs"
-        allocs = @allocated set_property!(t1, :matrix_val, [5.0 6.0; 7.0 8.0])
-        @info "Matrix set_property! allocations: $allocs"
-        allocs = @allocated is_set(t1, :matrix_val)
-        @test allocs == 0
+        allocs1 = @allocated get_property(t1, :matrix_val)
+        @info "Matrix get_property allocations: $allocs1"
+        allocs2 = @allocated set_property!(t1, :matrix_val, [5.0 6.0; 7.0 8.0])
+        @info "Matrix set_property! allocations: $allocs2"
+        allocs3 = @allocated is_set(t1, :matrix_val)
+        @test allocs1 == 0
+        # Do not require allocs2 == 0: assigning a new array always allocates
+        @test allocs3 == 0
     end
 
     @testset "with_property allocation - isbits" begin
