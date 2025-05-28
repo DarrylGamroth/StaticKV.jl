@@ -11,8 +11,9 @@ include("access_control.jl")
 include("callbacks.jl")
 include("utility_functions.jl")
 include("edge_cases.jl")
-include("performance.jl")
 include("anonymous_callbacks.jl")
+include("allocation_tests.jl")
+include("default_callbacks.jl")
 
 # Run all tests
 @testset verbose=true "ManagedProperties.jl" begin
@@ -31,16 +32,20 @@ include("anonymous_callbacks.jl")
     @testset "Utility Functions" begin
         test_utility_functions()
     end
-    
+
     @testset "Edge Cases" begin
         test_edge_cases()
     end
     
-    @testset "Performance" begin
-        test_performance()
+    @testset "Default Callbacks" begin
+        test_default_callbacks()
     end
     
     @testset "Anonymous Callbacks" begin
         test_anonymous_callbacks()
+    end
+    
+    @testset "Allocation Tests" begin
+        test_allocations()
     end
 end

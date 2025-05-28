@@ -116,11 +116,24 @@ function test_utility_functions()
         @test result == "JOHN Doe"  # Only "JOHN" is uppercase
         @test get_property(a, :name) == "JOHN"  # Original value unchanged
         
-        # Test with_property! with a numeric property
+        # Test with_property! with a numeric property 
+        # In TestAnonymousCallbacks, the score has a read callback that doubles the value
+        # Get the value (which will have read callback applied) 
         score_before = get_property(a, :score)
+        
+        # Add some diagnostic output
+        @info "Score before: $(score_before)"
+        
+        # The with_property! applies the read callback to the value before passing to our function
         result = with_property!(a, :score) do score
+            @info "Score in callback: $(score)"
             score + 10
         end
+        
+        @info "Result: $(result)"
+        @info "Score after: $(get_property(a, :score))"
+        
+        # Now update expectations based on the actual behavior - value is transformed twice
         @test result == score_before + 10
         @test get_property(a, :score) == score_before  # Value unchanged by with_property!
     end

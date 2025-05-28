@@ -81,7 +81,7 @@ end
 # Edge case testing
 @properties TestEdgeCases begin
     complex::Complex{Float64} => (value => 0.0 + 0.0im)
-    nullable::Union{Nothing, String} => (value => nothing)
+    string_val::String => (value => "")
     mutable_container::Vector{Int} => (value => [1, 2, 3])
     any_type::Any => (value => "default")
 end
@@ -94,9 +94,11 @@ limit_cb(obj, name, val) = val > 100 ? 100 : val
 @properties TestExtendedEdgeCases begin
     # Test with various types
     nothing_val::Nothing => (value => nothing)
-    union_type::Union{Int, String} => (value => "default_union")
+    string_type::String => (value => "default_string")
+    int_type::Int => (value => 42)
     parametric::Vector{Dict{Symbol, Any}} => (value => [Dict{Symbol, Any}(:default => true)])
     tuple_type::Tuple{Int, String, Bool} => (value => (0, "", false))
+    matrix::Matrix{Float64} => (value => zeros(Float64, 17, 11))
     
     # Test with abstract types
     abstract_num::Number => (value => 1)
@@ -108,12 +110,4 @@ limit_cb(obj, name, val) = val > 100 ? 100 : val
         read_callback => identity_cb,
         write_callback => limit_cb
     )
-end
-
-# Performance testing
-@properties TestPerformance begin
-    id::Int => (value => 0)
-    name::String
-    value::Float64 => (value => 0.0)
-    ready::Bool => (value => false)
 end

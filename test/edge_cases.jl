@@ -8,10 +8,10 @@ function test_edge_cases()
     set_property!(t1, :complex, 1.0 + 2.0im)
     @test get_property(t1, :complex) == 1.0 + 2.0im
     
-    # Test nullable property - not set but has a type that can be nothing
-    @test !is_set(t1, :nullable)  # Default is nothing, which is treated as not set
-    @test set_property!(t1, :nullable, "value") == "value"
-    @test get_property(t1, :nullable) == "value"
+    # Test string value property
+    @test is_set(t1, :string_val)  # Default is empty string, which is considered set
+    @test set_property!(t1, :string_val, "value") == "value"
+    @test get_property(t1, :string_val) == "value"
     
     # Test mutable container property
     @test get_property(t1, :mutable_container) == [1, 2, 3]
@@ -32,11 +32,12 @@ function test_edge_cases()
     # Test Nothing type
     @test !is_set(t2, :nothing_val)  # Default is nothing, which is treated as not set
     
-    # Test Union type
-    set_property!(t2, :union_type, "string")
-    @test get_property(t2, :union_type) == "string"
-    set_property!(t2, :union_type, 42)
-    @test get_property(t2, :union_type) == 42
+    # Test String and Int type properties
+    set_property!(t2, :string_type, "test string")
+    @test get_property(t2, :string_type) == "test string"
+    
+    set_property!(t2, :int_type, 100)
+    @test get_property(t2, :int_type) == 100
     
     # Test parametric types
     param_value = [Dict{Symbol, Any}(:a => 1, :b => "test")]
@@ -62,4 +63,20 @@ function test_edge_cases()
     @test get_property(t2, :recursive_cb) == 50
     set_property!(t2, :recursive_cb, 200)
     @test get_property(t2, :recursive_cb) == 100  # Clamped to 100
+    
+    # Test with_property! for matrix in-place modification
+    # First, verify initial matrix is all zeros
+    initial_matrix = get_property(t2, :matrix)
+    @test all(initial_matrix .== 0.0)
+    
+    # Now use with_property! to modify the matrix in-place
+    with_property!(t2, :matrix) do m
+        m .+= 1.0  # In-place modification
+        m[1:3, 1:3] .= 0.0  # Modify specific region
+    end
+    
+    # Verify modifications
+    modified_matrix = get_property(t2, :matrix)
+    @test all(modified_matrix[1:3, 1:3] .== 0.0)  # Check the zeroed region
+    @test all(modified_matrix[4:end, 4:end] .== 1.0)  # Check the incremented region
 end

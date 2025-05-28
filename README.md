@@ -17,6 +17,10 @@ using Pkg
 Pkg.add("ManagedProperties")
 ```
 
+## Limitations
+
+- **No Union Types**: Union types (like `Union{Nothing, String}`) are not allowed as property types because they conflict with the internal representation of unset properties. The package uses `nothing` to represent unset properties, so Union types containing `Nothing` would create ambiguity.
+
 ## Quick Start
 
 ```julia

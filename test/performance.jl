@@ -1,3 +1,5 @@
+# Test performance of property access vs. direct field access
+
 function test_performance()
     # Use the pre-defined TestPerformance type from basic_test_types.jl
     # Create a small benchmark measuring operations per second
@@ -12,8 +14,8 @@ function test_performance()
         t = TestPerformance()
         start = time()
         for i in 1:iterations
-            v = t.id.value
-            t.id.value = i
+            v = t.id.prop_value  # Using prop_value instead of value
+            t.id.prop_value = i  # Using prop_value instead of value
         end
         return time() - start
     end
@@ -33,7 +35,7 @@ function test_performance()
     managed_time = time_managed_access(iterations)
     
     # We just verify that managed property access doesn't take excessively longer
-    # than direct field access (factor depends on hardware, but 10x is reasonable)
+    # than direct field access (factor depends on hardware, but 20x is reasonable)
     slowdown_factor = managed_time / direct_time
     @test slowdown_factor < 20.0
     
@@ -54,7 +56,7 @@ function test_performance()
         start = time()
         for i in 1:iterations
             with_property!(t, :id) do val
-                val + 1
+                val + 1  # Return the incremented value
             end
         end
         return time() - start
