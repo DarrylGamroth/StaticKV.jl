@@ -158,10 +158,9 @@ function test_allocations()
             val + 1
         end
         @info "with_property Int allocations: $allocs"
-        allocs = @allocated with_property!(t1, :int_val) do val
+        @test_throws ErrorException with_property!(t1, :int_val) do val
             val + 1
         end
-        @info "with_property! Int allocations: $allocs"
     end
 
     @testset "with_property allocation - Vector" begin
@@ -202,9 +201,53 @@ function test_allocations()
             i + f
         end
         @info "with_properties allocations: $allocs"
-        allocs = @allocated with_properties!(t1, :int_val, :float_val) do i, f
+        @test_throws ErrorException with_properties!(t1, :int_val, :float_val) do i, f
             i + f
         end
-        @info "with_properties! allocations: $allocs"
+    end
+
+    @testset "with_property! does not mutate isbits in-place" begin
+        set_property!(t1, :int_val, 100)
+        @test_throws ErrorException with_property!(t1, :int_val) do val
+            val + 23
+        end
+        set_property!(t1, :int_val, 200)
+        @test_throws ErrorException with_property!(t1, :int_val) do val
+            r = Ref(val)
+            r[] += 1
+            r[]
+        end
+    end
+
+    @testset "with_property! mutates mutable property in-place" begin
+        set_property!(t1, :vector_val, [1,2,3])
+        result = with_property!(t1, :vector_val) do vec
+            push!(vec, 99)
+            vec
+        end
+        @test result == [1,2,3,99]
+        @test get_property(t1, :vector_val) == [1,2,3,99]
+    end
+
+    @testset "with_properties! does not mutate isbits in-place" begin
+        set_property!(t1, :int_val, 10)
+        set_property!(t1, :float_val, 1.5)
+        @test_throws ErrorException with_properties!(t1, :int_val, :float_val) do i, f
+            i += 5
+            f += 2.5
+            (i, f)
+        end
+    end
+
+    @testset "with_properties! mutates mutable properties in-place" begin
+        set_property!(t1, :vector_val, [1])
+        set_property!(t1, :matrix_val, [2.0 3.0; 4.0 5.0])
+        result = with_properties!(t1, :vector_val, :matrix_val) do v, m
+            push!(v, 2)
+            m[1,1] = 42.0
+            nothing
+        end
+        @test get_property(t1, :vector_val) == [1,2]
+        @test get_property(t1, :matrix_val)[1,1] == 42.0
     end
 end

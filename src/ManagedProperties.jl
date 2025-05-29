@@ -644,6 +644,10 @@ macro properties(struct_name, args...)
         # Throws
         - `ErrorException` if the property is not readable, not writable, not set, or not found
 
+        # Notes
+        - For **mutable** property types (e.g., arrays, custom mutable structs), you can mutate the value in-place inside the do-block.
+        - For **isbits/immutable** property types (e.g., `Int`, `Float64`, `Char`, tuples, or immutable structs), you **cannot** mutate the value in-place. To update an isbits property, return the new value from the do-block and assign it using `set_property!`.
+
         # Example
         ```julia
         # For mutable types, in-place modification works:
@@ -663,6 +667,7 @@ macro properties(struct_name, args...)
         @inline function with_property!(f::Function, p::$(struct_name), s::Symbol)
             s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
             prop_meta = getfield(p, s)
+            isbits(prop_meta.value) && throw(ErrorException("Property is isbits cannot mutate in-place"))
             isnothing(prop_meta.value) && throw(ErrorException("Property not set"))
             !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property not readable"))
             !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property not writable"))
@@ -725,12 +730,27 @@ macro properties(struct_name, args...)
         # Throws
         - `ErrorException` if any property is not readable, not writable, not set, or not found
 
+        # Notes
+        - For **mutable** property types, you can mutate the values in-place inside the do-block.
+        - For **isbits/immutable** property types, you **cannot** mutate the values in-place. To update isbits properties, return the new values from the do-block and assign them using `set_property!`.
+
         # Example
         ```julia
+        # For mutable types:
+        with_properties!(person, :tags, :scores) do tags, scores
+            push!(tags, "new")
+            push!(scores, 100)
+            nothing
+        end
+
+        # For isbits types:
         with_properties!(person, :x, :y) do x, y
             x += 10
             y += 5
-            return nothing
+            # This does NOT update the properties; you must use set_property! for each
+            set_property!(person, :x, x)
+            set_property!(person, :y, y)
+            nothing
         end
         ```
         """
@@ -740,6 +760,7 @@ macro properties(struct_name, args...)
                 s = properties[i]
                 s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
                 prop_meta = getfield(p, s)
+                isbits(prop_meta.value) && throw(ErrorException("Property $s is isbits cannot mutate in-place"))
                 isnothing(prop_meta.value) && throw(ErrorException("Property $s not set"))
                 !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property $s not readable"))
                 !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property $s not writable"))

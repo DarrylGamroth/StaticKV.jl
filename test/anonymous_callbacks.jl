@@ -98,13 +98,3 @@ function test_anonymous_callbacks()
         @test get_property(t, :score) == 10
     end
 end
-
-# NOTE: Do not copy or convert between instances with different anonymous callback types!
-# Each @properties struct with inline anonymous callbacks is a unique type and cannot be converted to another.
-# This is a Julia limitation: each closure has a unique type, so PropertySpecs fields are not interconvertible.
-
-# If you need to copy, always construct a new instance with the same callback types.
-# The following is NOT allowed and will error:
-# t1 = MyStructWithAnonCallbacks()
-# t2 = MyStructWithOtherAnonCallbacks()
-# t1 = t2  # This will fail if the callback types differ
