@@ -246,12 +246,12 @@ macro properties(struct_name, args...)
     # Check for keyword arguments before the block
     default_read_callback = nothing
     default_write_callback = nothing
-    
+
     # The last argument should always be the property block
     if length(args) < 1
         error("@properties requires a begin...end block after the struct name")
     end
-    
+
     # Handle keyword arguments passed directly to the macro
     block = args[end]
     if length(args) > 1
@@ -272,7 +272,7 @@ macro properties(struct_name, args...)
             end
         end
     end
-    
+
     if block.head != :block
         error("@properties requires a begin...end block for property definitions")
     end
@@ -296,7 +296,7 @@ macro properties(struct_name, args...)
 
     # Build type parameter list for all PropertySpecs and clock
     ps_type_syms = [Symbol(:PS, i) for i in 1:length(props)]
-    all_type_syms = [ps_type_syms...,:C]
+    all_type_syms = [ps_type_syms..., :C]
     struct_type_params = Expr(:curly, struct_name, [Expr(:<:, ps, :(ManagedProperties.PropertySpecs)) for ps in ps_type_syms]..., Expr(:<:, :C, :(Clocks.AbstractClock)))
 
     # Build the struct body with parametric PropertySpecs types
@@ -317,7 +317,7 @@ macro properties(struct_name, args...)
                 timestamp = $(isnothing(prop_values[i]) ? :(-1) : :(Clocks.time_nanos(clock)))
                 ManagedProperties.PropertySpecs{$(prop_types[i])}(value, access, read_cb, write_cb, timestamp)
             end) for i in 1:length(props)]...)
-            return new{ $( [:(typeof($(prop_names[i]))) for i in 1:length(props)]... ), C }($(prop_names...), clock)
+            return new{$([:(typeof($(prop_names[i]))) for i in 1:length(props)]...),C}($(prop_names...), clock)
         end
     end
 
@@ -328,8 +328,7 @@ macro properties(struct_name, args...)
     struct_def = Expr(:struct, true, struct_type_params, struct_body)
 
     # Generate property information
-    prop_info = :(const $(Symbol("$(struct_name)_PROPS")) = (
-        names=$(Expr(:tuple, [QuoteNode(name) for name in prop_names]...)),
+    prop_info = :(const $(Symbol("$(struct_name)_PROPS")) = (;
         types=$(Expr(:tuple, [type for type in prop_types]...))
     ))
 
@@ -355,11 +354,7 @@ macro properties(struct_name, args...)
         - `true` if the property is set, `false` otherwise
         """
         @inline function is_set(p::$(struct_name), s::Symbol)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            if s in names
-                return !isnothing(getfield(p, s).value)
-            end
-            return false
+            s in propertynames(p)[1:end-1] && !isnothing(getfield(p, s).value)
         end
 
         """
@@ -374,13 +369,7 @@ macro properties(struct_name, args...)
         - `true` if all properties are set, `false` otherwise
         """
         @inline function all_properties_set(p::$(struct_name))
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            for name in names
-                if isnothing(getfield(p, name).value)
-                    return false
-                end
-            end
-            return true
+            all(!isnothing(getfield(p, n).value) for n in propertynames(p)[1:end-1])
         end
 
         """
@@ -399,21 +388,11 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not readable, not set, or not found
         """
         @inline function get_property(p::$(struct_name), s::Symbol)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            if s in names
-                prop_meta = getfield(p, s)
-
-                if !AccessMode.is_readable(prop_meta.access_flags)
-                    throw(ErrorException("Property not readable"))
-                end
-
-                if isnothing(prop_meta.value)
-                    throw(ErrorException("Property not set"))
-                end
-
-                return prop_meta.read_callback(p, s, prop_meta.value)
-            end
-            throw(ErrorException("Property not found"))
+            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            prop_meta = getfield(p, s)
+            !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property not readable"))
+            isnothing(prop_meta.value) && throw(ErrorException("Property not set"))
+            return prop_meta.read_callback(p, s, prop_meta.value)
         end
 
         """
@@ -433,23 +412,13 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not writable or not found
         """
         @inline function set_property!(p::$(struct_name), s::Symbol, v)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            if s in names
-                prop_meta = getfield(p, s)
-
-                if !AccessMode.is_writable(prop_meta.access_flags)
-                    throw(ErrorException("Property not writable"))
-                end
-
-                val = prop_meta.write_callback(p, s, v)
-
-                # Update the existing metadata with the transformed value
-                prop_meta.value = val
-                prop_meta.last_update = Clocks.time_nanos(p._clock)
-
-                return val
-            end
-            throw(ErrorException("Property not found"))
+            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            prop_meta = getfield(p, s)
+            !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property not writable"))
+            val = prop_meta.write_callback(p, s, v)
+            prop_meta.value = val
+            prop_meta.last_update = Clocks.time_nanos(p._clock)
+            return val
         end
 
         """
@@ -464,15 +433,11 @@ macro properties(struct_name, args...)
         # Returns
         - The type of the property, or `nothing` if the property is not found
         """
-        @inline function property_type(::Type{$(struct_name)}, s::Symbol)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            types = $(Symbol("$(struct_name)_PROPS")).types
-            for i in 1:length(names)
-                if names[i] === s
-                    return types[i]
-                end
-            end
-            return nothing
+        @inline function property_type(::Type{T}, s::Symbol) where {T<:$(struct_name)}
+            s in fieldnames(T)[1:end-1] || return nothing
+            FT = fieldtype(T, s)
+            get_valtype(::Type{ManagedProperties.PropertySpecs{T,R,W}}) where {T,R,W} = T
+            return get_valtype(FT)
         end
 
         """
@@ -487,9 +452,7 @@ macro properties(struct_name, args...)
         # Returns
         - The type of the property, or `nothing` if the property is not found
         """
-        @inline function property_type(p::$(struct_name), s::Symbol)
-            return property_type($(struct_name), s)
-        end
+        @inline property_type(p::$(struct_name), s::Symbol) = property_type(typeof(p), s)
 
         """
             is_readable(p, s::Symbol)
@@ -507,13 +470,9 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not found
         """
         @inline function is_readable(p::$(struct_name), s::Symbol)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            if s in names
-                prop_meta = getfield(p, s)
-                return AccessMode.is_readable(prop_meta.access_flags)
-            end
-
-            throw(ErrorException("Property not found"))
+            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            prop_meta = getfield(p, s)
+            return AccessMode.is_readable(prop_meta.access_flags)
         end
 
         """
@@ -532,13 +491,9 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not found
         """
         @inline function is_writable(p::$(struct_name), s::Symbol)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            if s in names
-                prop_meta = getfield(p, s)
-                return AccessMode.is_writable(prop_meta.access_flags)
-            end
-
-            throw(ErrorException("Property not found"))
+            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            prop_meta = getfield(p, s)
+            return AccessMode.is_writable(prop_meta.access_flags)
         end
 
         """
@@ -557,76 +512,74 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not found
         """
         @inline function last_update(p::$(struct_name), s::Symbol)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            if s in names
-                return getfield(p, s).last_update
-            end
-            throw(ErrorException("Property not found"))
+            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            return getfield(p, s).last_update
         end
 
         # Add pretty printing support
-        function Base.show(io::IO, ::MIME"text/plain", p::$(struct_name){C}) where {C}
-            println(io, "$($(QuoteNode(struct_name))){$C} with properties:")
+        # function Base.show(io::IO, ::MIME"text/plain", p::$(struct_name){C}) where {C}
+        #     println(io, "$($(QuoteNode(struct_name))){$C} with properties:")
 
-            # Get property information
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            types = $(Symbol("$(struct_name)_PROPS")).types
+        #     # Get property information
+        #     names = propertynames(p)[1:end-1]
+        #     types = [typeof(getfield(p, name).value) for name in names]
+        #     types = $(Symbol("$(struct_name)_PROPS")).types
 
-            # Maximum name length for alignment
-            max_name_len = maximum(length(string(name)) for name in names)
+        #     # Maximum name length for alignment
+        #     max_name_len = maximum(length(string(name)) for name in names)
 
-            # Print each property
-            for i in 1:length(names)
-                name = names[i]
-                prop_meta = getfield(p, name)
+        #     # Print each property
+        #     for i in 1:length(names)
+        #         name = names[i]
+        #         prop_meta = getfield(p, name)
 
-                # Access flags string representation
-                access_str = ""
-                if AccessMode.is_readable(prop_meta.access_flags)
-                    access_str *= "R"
-                else
-                    access_str *= "-"
-                end
-                if AccessMode.is_writable(prop_meta.access_flags)
-                    access_str *= "W"
-                else
-                    access_str *= "-"
-                end
+        #         # Access flags string representation
+        #         access_str = ""
+        #         if AccessMode.is_readable(prop_meta.access_flags)
+        #             access_str *= "R"
+        #         else
+        #             access_str *= "-"
+        #         end
+        #         if AccessMode.is_writable(prop_meta.access_flags)
+        #             access_str *= "W"
+        #         else
+        #             access_str *= "-"
+        #         end
 
-                # Value representation
-                value_str = if isnothing(prop_meta.value)
-                    "nothing"
-                elseif prop_meta.value isa AbstractArray
-                    type_str = string(typeof(prop_meta.value).parameters[1])
-                    dims_str = join(size(prop_meta.value), "×")
-                    "$(type_str)[$dims_str]"
-                else
-                    repr(prop_meta.value)
-                end
+        #         # Value representation
+        #         value_str = if isnothing(prop_meta.value)
+        #             "nothing"
+        #         elseif prop_meta.value isa AbstractArray
+        #             type_str = string(typeof(prop_meta.value).parameters[1])
+        #             dims_str = join(size(prop_meta.value), "×")
+        #             "$(type_str)[$dims_str]"
+        #         else
+        #             repr(prop_meta.value)
+        #         end
 
-                # Callbacks info
-                read_cb = prop_meta.read_callback === ManagedProperties._default_read_callback ? "" : " (custom read)"
-                write_cb = prop_meta.write_callback === ManagedProperties._default_write_callback ? "" : " (custom write)"
-                cb_str = read_cb * write_cb
+        #         # Callbacks info
+        #         read_cb = prop_meta.read_callback === ManagedProperties._default_read_callback ? "" : " (custom read)"
+        #         write_cb = prop_meta.write_callback === ManagedProperties._default_write_callback ? "" : " (custom write)"
+        #         cb_str = read_cb * write_cb
 
-                # Last update time
-                time_str = if prop_meta.last_update == -1
-                    "never"
-                else
-                    "$(prop_meta.last_update) ns"
-                end
+        #         # Last update time
+        #         time_str = if prop_meta.last_update == -1
+        #             "never"
+        #         else
+        #             "$(prop_meta.last_update) ns"
+        #         end
 
-                name_padded = lpad(string(name), max_name_len)
-                type_str = rpad(string(types[i]), 20)
-                value_padded = rpad(value_str, 15)
-                println(io, "  $(name_padded) :: $(type_str) = $(value_padded) [$(access_str)]$(cb_str) (last update: $(time_str))")
-            end
-        end
+        #         name_padded = lpad(string(name), max_name_len)
+        #         type_str = rpad(string(types[i]), 20)
+        #         value_padded = rpad(value_str, 15)
+        #         println(io, "  $(name_padded) :: $(type_str) = $(value_padded) [$(access_str)]$(cb_str) (last update: $(time_str))")
+        #     end
+        # end
 
         # Add a compact version for regular show
-        function Base.show(io::IO, p::$(struct_name){C}) where {C}
-            print(io, "$($(QuoteNode(struct_name))){$C}(")
-            names = $(Symbol("$(struct_name)_PROPS")).names
+        function Base.show(io::IO, p::$(struct_name))
+            print(io, "$($(QuoteNode(struct_name)))")
+            names = propertynames(p)[1:end-1]
             set_count = 0
             total = length(names)
 
@@ -636,7 +589,7 @@ macro properties(struct_name, args...)
                 end
             end
 
-            print(io, "$(set_count)/$(total) properties set)")
+            print(io, " $(set_count)/$(total) properties set)")
         end
 
         """
@@ -664,27 +617,12 @@ macro properties(struct_name, args...)
         """
         # Non-mutating version for read-only operations
         @inline function with_property(f::Function, p::$(struct_name), s::Symbol)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            if s in names
-                prop_meta = getfield(p, s)
-
-                if isnothing(prop_meta.value)
-                    throw(ErrorException("Property not set"))
-                end
-
-                # Check if property is readable
-                if !AccessMode.is_readable(prop_meta.access_flags)
-                    throw(ErrorException("Property not readable"))
-                end
-
-                # Get value through read callback first
-                value = prop_meta.read_callback(p, s, prop_meta.value)
-
-                # Apply the function to the value
-                return f(value)
-            end
-
-            throw(ErrorException("Property not found"))
+            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            prop_meta = getfield(p, s)
+            isnothing(prop_meta.value) && throw(ErrorException("Property not set"))
+            !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property not readable"))
+            value = prop_meta.read_callback(p, s, prop_meta.value)
+            return f(value)
         end
 
         """
@@ -723,38 +661,16 @@ macro properties(struct_name, args...)
         """
         # Mutating version for in-place operations (non-isbits types only)
         @inline function with_property!(f::Function, p::$(struct_name), s::Symbol)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            if s in names
-                prop_meta = getfield(p, s)
-
-                if isnothing(prop_meta.value)
-                    throw(ErrorException("Property not set"))
-                end
-
-                # Check if property is both readable and writable
-                if !AccessMode.is_readable(prop_meta.access_flags)
-                    throw(ErrorException("Property not readable"))
-                end
-
-                if !AccessMode.is_writable(prop_meta.access_flags)
-                    throw(ErrorException("Property not writable"))
-                end
-
-                # Get value through read callback
-                value = prop_meta.read_callback(p, s, prop_meta.value)
-
-                # Apply the function to the value
-                result = f(value)
-
-                # Call the write_callback on the original property value (not the transformed value)
-                prop_meta.write_callback(p, s, value)
-
-                # Update the timestamp
-                prop_meta.last_update = Clocks.time_nanos(p._clock)
-
-                return result
-            end
-            throw(ErrorException("Property not found"))
+            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            prop_meta = getfield(p, s)
+            isnothing(prop_meta.value) && throw(ErrorException("Property not set"))
+            !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property not readable"))
+            !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property not writable"))
+            value = prop_meta.read_callback(p, s, prop_meta.value)
+            result = f(value)
+            prop_meta.write_callback(p, s, value)
+            prop_meta.last_update = Clocks.time_nanos(p._clock)
+            return result
         end
 
         """
@@ -784,19 +700,11 @@ macro properties(struct_name, args...)
         @inline function with_properties(f::Function, p::$(struct_name), properties::Symbol...)
             values = ntuple(length(properties)) do i
                 s = properties[i]
-                names = $(Symbol("$(struct_name)_PROPS")).names
-                if s in names
-                    prop_meta = getfield(p, s)
-                    if isnothing(prop_meta.value)
-                        throw(ErrorException("Property $s not set"))
-                    end
-                    if !AccessMode.is_readable(prop_meta.access_flags)
-                        throw(ErrorException("Property $s not readable"))
-                    end
-                    prop_meta.read_callback(p, s, prop_meta.value)
-                else
-                    throw(ErrorException("Property $s not found"))
-                end
+                s in propertynames(p)[1:end-1] || throw(ErrorException("Property %s not found"))
+                prop_meta = getfield(p, s)
+                isnothing(prop_meta.value) && throw(ErrorException("Property $s not set"))
+                !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property $s not readable"))
+                prop_meta.read_callback(p, s, prop_meta.value)
             end
             return f(values...)
         end
@@ -830,22 +738,12 @@ macro properties(struct_name, args...)
         @inline function with_properties!(f::Function, p::$(struct_name), properties::Symbol...)
             values = ntuple(length(properties)) do i
                 s = properties[i]
-                names = $(Symbol("$(struct_name)_PROPS")).names
-                if s in names
-                    prop_meta = getfield(p, s)
-                    if isnothing(prop_meta.value)
-                        throw(ErrorException("Property $s not set"))
-                    end
-                    if !AccessMode.is_readable(prop_meta.access_flags)
-                        throw(ErrorException("Property $s not readable"))
-                    end
-                    if !AccessMode.is_writable(prop_meta.access_flags)
-                        throw(ErrorException("Property $s not writable"))
-                    end
-                    prop_meta.read_callback(p, s, prop_meta.value)
-                else
-                    throw(ErrorException("Property $s not found"))
-                end
+                s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+                prop_meta = getfield(p, s)
+                isnothing(prop_meta.value) && throw(ErrorException("Property $s not set"))
+                !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property $s not readable"))
+                !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property $s not writable"))
+                prop_meta.read_callback(p, s, prop_meta.value)
             end
             result = f(values...)
             for s in properties
@@ -877,21 +775,12 @@ macro properties(struct_name, args...)
         ```
         """
         @inline function reset_property!(p::$(struct_name), s::Symbol)
-            names = $(Symbol("$(struct_name)_PROPS")).names
-            if s in names
-                prop_meta = getfield(p, s)
-
-                if !AccessMode.is_writable(prop_meta.access_flags)
-                    throw(ErrorException("Property not writable"))
-                end
-
-                # Reset value to nothing and last_update to -1
-                prop_meta.value = nothing
-                prop_meta.last_update = -1
-
-                return nothing
-            end
-            throw(ErrorException("Property not found"))
+            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            prop_meta = getfield(p, s)
+            !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property not writable"))
+            prop_meta.value = nothing
+            prop_meta.last_update = -1
+            return nothing
         end
 
         # Precompilation directives for general property operations
