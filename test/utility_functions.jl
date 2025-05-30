@@ -80,7 +80,7 @@ function test_utility_functions()
         @test get_property(t, :height) == 170.5  # Unchanged
         @test get_property(t, :age) == 26  # Unchanged
 
-        # Test multiple property manipulation (should not use with_properties! for isbits)
+        # Test multiple property manipulation
         height = get_property(t, :height)
         age = get_property(t, :age)
         new_height = height + 1.0

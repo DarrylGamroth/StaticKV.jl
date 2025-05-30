@@ -142,12 +142,11 @@ area = with_properties(person, :width, :height) do width, height
     width * height
 end
 
-# Update multiple properties at once
-with_properties!(person, :x, :y) do x, y
-    x += 10
-    y += 5
-    return nothing
-end
+# To update multiple properties, you need to get and set them individually
+x = get_property(person, :x) + 10
+y = get_property(person, :y) + 5
+set_property!(person, :x, x)
+set_property!(person, :y, y)
 ```
 
 ### Property Metadata
@@ -180,9 +179,8 @@ last_updated = last_update(person, :name)  # Timestamp in nanoseconds
 ### Property Operations
 
 - `with_property(fn, obj, prop_name)`: Apply a function to a property value (read-only)
-- `with_property!(fn, obj, prop_name)`: Apply a function and update the property
+- `with_property!(fn, obj, prop_name)`: Apply a function and update a mutable property
 - `with_properties(fn, obj, prop_names...)`: Apply a function to multiple properties (read-only)
-- `with_properties!(fn, obj, prop_names...)`: Apply a function and update multiple properties
 
 ## License
 

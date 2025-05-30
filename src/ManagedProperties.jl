@@ -389,10 +389,10 @@ macro properties(struct_name, args...)
         """
         @inline function get_property(p::$(struct_name), s::Symbol)
             s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
-            prop_meta = getfield(p, s)
-            !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property not readable"))
-            isnothing(prop_meta.value) && throw(ErrorException("Property not set"))
-            return prop_meta.read_callback(p, s, prop_meta.value)
+            specs = getfield(p, s)
+            !AccessMode.is_readable(specs.access_flags) && throw(ErrorException("Property not readable"))
+            isnothing(specs.value) && throw(ErrorException("Property not set"))
+            specs.read_callback(p, s, specs.value)
         end
 
         """
@@ -413,12 +413,11 @@ macro properties(struct_name, args...)
         """
         @inline function set_property!(p::$(struct_name), s::Symbol, v)
             s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
-            prop_meta = getfield(p, s)
-            !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property not writable"))
-            val = prop_meta.write_callback(p, s, v)
-            prop_meta.value = val
-            prop_meta.last_update = Clocks.time_nanos(p._clock)
-            return val
+            specs = getfield(p, s)
+            !AccessMode.is_writable(specs.access_flags) && throw(ErrorException("Property not writable"))
+            specs.value = specs.write_callback(p, s, v)
+            specs.last_update = Clocks.time_nanos(p._clock)
+            return specs.value
         end
 
         """
@@ -437,7 +436,7 @@ macro properties(struct_name, args...)
             s in fieldnames(T)[1:end-1] || return nothing
             FT = fieldtype(T, s)
             get_valtype(::Type{ManagedProperties.PropertySpecs{T,R,W}}) where {T,R,W} = T
-            return get_valtype(FT)
+            get_valtype(FT)
         end
 
         """
@@ -471,8 +470,8 @@ macro properties(struct_name, args...)
         """
         @inline function is_readable(p::$(struct_name), s::Symbol)
             s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
-            prop_meta = getfield(p, s)
-            return AccessMode.is_readable(prop_meta.access_flags)
+            specs = getfield(p, s)
+            AccessMode.is_readable(specs.access_flags)
         end
 
         """
@@ -492,8 +491,8 @@ macro properties(struct_name, args...)
         """
         @inline function is_writable(p::$(struct_name), s::Symbol)
             s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
-            prop_meta = getfield(p, s)
-            return AccessMode.is_writable(prop_meta.access_flags)
+            specs = getfield(p, s)
+            AccessMode.is_writable(specs.access_flags)
         end
 
         """
@@ -513,7 +512,7 @@ macro properties(struct_name, args...)
         """
         @inline function last_update(p::$(struct_name), s::Symbol)
             s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
-            return getfield(p, s).last_update
+            getfield(p, s).last_update
         end
 
         # Add pretty printing support
@@ -531,42 +530,42 @@ macro properties(struct_name, args...)
         #     # Print each property
         #     for i in 1:length(names)
         #         name = names[i]
-        #         prop_meta = getfield(p, name)
+        #         specs = getfield(p, name)
 
         #         # Access flags string representation
         #         access_str = ""
-        #         if AccessMode.is_readable(prop_meta.access_flags)
+        #         if AccessMode.is_readable(specs.access_flags)
         #             access_str *= "R"
         #         else
         #             access_str *= "-"
         #         end
-        #         if AccessMode.is_writable(prop_meta.access_flags)
+        #         if AccessMode.is_writable(specs.access_flags)
         #             access_str *= "W"
         #         else
         #             access_str *= "-"
         #         end
 
         #         # Value representation
-        #         value_str = if isnothing(prop_meta.value)
+        #         value_str = if isnothing(specs.value)
         #             "nothing"
-        #         elseif prop_meta.value isa AbstractArray
-        #             type_str = string(typeof(prop_meta.value).parameters[1])
-        #             dims_str = join(size(prop_meta.value), "×")
+        #         elseif specs.value isa AbstractArray
+        #             type_str = string(typeof(specs.value).parameters[1])
+        #             dims_str = join(size(specs.value), "×")
         #             "$(type_str)[$dims_str]"
         #         else
-        #             repr(prop_meta.value)
+        #             repr(specs.value)
         #         end
 
         #         # Callbacks info
-        #         read_cb = prop_meta.read_callback === ManagedProperties._default_read_callback ? "" : " (custom read)"
-        #         write_cb = prop_meta.write_callback === ManagedProperties._default_write_callback ? "" : " (custom write)"
+        #         read_cb = specs.read_callback === ManagedProperties._default_read_callback ? "" : " (custom read)"
+        #         write_cb = specs.write_callback === ManagedProperties._default_write_callback ? "" : " (custom write)"
         #         cb_str = read_cb * write_cb
 
         #         # Last update time
-        #         time_str = if prop_meta.last_update == -1
+        #         time_str = if specs.last_update == -1
         #             "never"
         #         else
-        #             "$(prop_meta.last_update) ns"
+        #             "$(specs.last_update) ns"
         #         end
 
         #         name_padded = lpad(string(name), max_name_len)
@@ -589,7 +588,7 @@ macro properties(struct_name, args...)
                 end
             end
 
-            print(io, " $(set_count)/$(total) properties set)")
+            print(io, " $(set_count)/$(total) properties set")
         end
 
         """
@@ -618,11 +617,11 @@ macro properties(struct_name, args...)
         # Non-mutating version for read-only operations
         @inline function with_property(f::Function, p::$(struct_name), s::Symbol)
             s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
-            prop_meta = getfield(p, s)
-            isnothing(prop_meta.value) && throw(ErrorException("Property not set"))
-            !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property not readable"))
-            value = prop_meta.read_callback(p, s, prop_meta.value)
-            return f(value)
+            specs = getfield(p, s)
+            isnothing(specs.value) && throw(ErrorException("Property not set"))
+            !AccessMode.is_readable(specs.access_flags) && throw(ErrorException("Property not readable"))
+            value = specs.read_callback(p, s, specs.value)
+            f(value)
         end
 
         """
@@ -666,15 +665,15 @@ macro properties(struct_name, args...)
         # Mutating version for in-place operations (non-isbits types only)
         @inline function with_property!(f::Function, p::$(struct_name), s::Symbol)
             s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
-            prop_meta = getfield(p, s)
-            isbits(prop_meta.value) && throw(ErrorException("Property is isbits cannot mutate in-place"))
-            isnothing(prop_meta.value) && throw(ErrorException("Property not set"))
-            !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property not readable"))
-            !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property not writable"))
-            value = prop_meta.read_callback(p, s, prop_meta.value)
+            specs = getfield(p, s)
+            isbits(specs.value) && throw(ErrorException("Property is isbits cannot mutate in-place"))
+            isnothing(specs.value) && throw(ErrorException("Property not set"))
+            !AccessMode.is_readable(specs.access_flags) && throw(ErrorException("Property not readable"))
+            !AccessMode.is_writable(specs.access_flags) && throw(ErrorException("Property not writable"))
+            value = specs.read_callback(p, s, specs.value)
             result = f(value)
-            prop_meta.write_callback(p, s, value)
-            prop_meta.last_update = Clocks.time_nanos(p._clock)
+            specs.write_callback(p, s, value)
+            specs.last_update = Clocks.time_nanos(p._clock)
             return result
         end
 
@@ -703,75 +702,16 @@ macro properties(struct_name, args...)
         """
         # Multiple property access - read-only version
         @inline function with_properties(f::Function, p::$(struct_name), properties::Symbol...)
-            values = ntuple(length(properties)) do i
+            @inline function val_generator(i)
                 s = properties[i]
-                s in propertynames(p)[1:end-1] || throw(ErrorException("Property %s not found"))
-                prop_meta = getfield(p, s)
-                isnothing(prop_meta.value) && throw(ErrorException("Property $s not set"))
-                !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property $s not readable"))
-                prop_meta.read_callback(p, s, prop_meta.value)
+                s in propertynames(p)[1:end-1] || throw(ErrorException("Property $s not found"))
+                specs = getfield(p, s)
+                isnothing(specs.value) && throw(ErrorException("Property $s not set"))
+                !AccessMode.is_readable(specs.access_flags) && throw(ErrorException("Property $s not readable"))
+                specs.read_callback(p, s, specs.value)
             end
-            return f(values...)
-        end
-
-        """
-            with_properties!(f::Function, p, properties::Symbol...)
-
-        Apply a function to multiple property values and update the properties with modified values.
-
-        # Arguments
-        - `f::Function`: The function to apply to the property values
-        - `p`: An object created with `@properties`
-        - `properties::Symbol...`: The property names
-
-        # Returns
-        - The result of applying `f` to the property values
-
-        # Throws
-        - `ErrorException` if any property is not readable, not writable, not set, or not found
-
-        # Notes
-        - For **mutable** property types, you can mutate the values in-place inside the do-block.
-        - For **isbits/immutable** property types, you **cannot** mutate the values in-place. To update isbits properties, return the new values from the do-block and assign them using `set_property!`.
-
-        # Example
-        ```julia
-        # For mutable types:
-        with_properties!(person, :tags, :scores) do tags, scores
-            push!(tags, "new")
-            push!(scores, 100)
-            nothing
-        end
-
-        # For isbits types:
-        with_properties!(person, :x, :y) do x, y
-            x += 10
-            y += 5
-            # This does NOT update the properties; you must use set_property! for each
-            set_property!(person, :x, x)
-            set_property!(person, :y, y)
-            nothing
-        end
-        ```
-        """
-        # Multiple property access - mutating version
-        @inline function with_properties!(f::Function, p::$(struct_name), properties::Symbol...)
-            values = ntuple(length(properties)) do i
-                s = properties[i]
-                s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
-                prop_meta = getfield(p, s)
-                isbits(prop_meta.value) && throw(ErrorException("Property $s is isbits cannot mutate in-place"))
-                isnothing(prop_meta.value) && throw(ErrorException("Property $s not set"))
-                !AccessMode.is_readable(prop_meta.access_flags) && throw(ErrorException("Property $s not readable"))
-                !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property $s not writable"))
-                prop_meta.read_callback(p, s, prop_meta.value)
-            end
-            result = f(values...)
-            for s in properties
-                prop_meta = getfield(p, s)
-                prop_meta.last_update = Clocks.time_nanos(p._clock)
-            end
-            return result
+            values = ntuple(val_generator, length(properties))
+            f(values...)
         end
 
         """
@@ -797,10 +737,10 @@ macro properties(struct_name, args...)
         """
         @inline function reset_property!(p::$(struct_name), s::Symbol)
             s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
-            prop_meta = getfield(p, s)
-            !AccessMode.is_writable(prop_meta.access_flags) && throw(ErrorException("Property not writable"))
-            prop_meta.value = nothing
-            prop_meta.last_update = -1
+            specs = getfield(p, s)
+            !AccessMode.is_writable(specs.access_flags) && throw(ErrorException("Property not writable"))
+            specs.value = nothing
+            specs.last_update = -1
             return nothing
         end
 
@@ -838,7 +778,7 @@ end
 export @properties, AccessMode
 export get_property, set_property!, reset_property!, property_type, is_set, all_properties_set
 export with_property, with_property!
-export with_properties, with_properties!
+export with_properties
 export is_readable, is_writable, last_update
 
 end # module

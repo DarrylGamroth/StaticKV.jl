@@ -49,47 +49,23 @@ function test_property_basics()
     t2 = TestBasic()
     @test_throws ErrorException get_property(t2, :name)
 
-    # Test with_property! for isbits (immutable) type: should throw error
-    set_property!(t, :age, 10)
-    @test_throws ErrorException with_property!(t, :age) do age
-        age + 5
-    end
-    @test get_property(t, :age) == 10  # property is unchanged
-
-    # Test with_property! with Ref for isbits type: should throw error
-    set_property!(t, :age, 20)
-    @test_throws ErrorException with_property!(t, :age) do age
-        r = Ref(age)
-        r[] += 1
-        r[]
-    end
-    @test get_property(t, :age) == 20  # property is unchanged
-
-    # Test with_property! for mutable type: can mutate in-place
-    mt = MutableTest()
-    result = with_property!(mt, :arr) do arr
-        push!(arr, 4)
-        arr
-    end
-    @test result == [1,2,3,4]
-    @test get_property(mt, :arr) == [1,2,3,4]
-
-    # Test with_properties! for isbits types: should throw error
-    set_property!(t, :age, 30)
-    set_property!(t, :optional, 2.5)
-    @test_throws ErrorException with_properties!(t, :age, :optional) do age, opt
-        age += 10
-        opt += 1.5
-        (age, opt)
+    @testset "with_property! does not mutate isbits in-place" begin
+        set_property!(t, :age, 100)
+        @test_throws ErrorException with_property!(t, :age) do val
+            val + 23
+        end
     end
 
-    # Test with_properties! for mutable types: can mutate in-place
-    mmt = MultiMutableTest()
-    result = with_properties!(mmt, :a, :b) do a, b
-        push!(a, 10)
-        push!(b, 20)
-        nothing
+    @testset "with_property! mutates mutable property in-place" begin
+        mt = MutableTest()
+        set_property!(mt, :arr, [1,2,3])
+        result = with_property!(mt, :arr) do vec
+            push!(vec, 99)
+            vec
+        end
+        @test result == [1,2,3,99]
+        @test get_property(mt, :arr) == [1,2,3,99]
     end
-    @test get_property(mmt, :a) == [1,10]
-    @test get_property(mmt, :b) == [2,20]
+
+
 end
