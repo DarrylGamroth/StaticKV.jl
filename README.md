@@ -31,10 +31,17 @@ using Clocks  # For timestamp functionality
 @properties Person begin
     name::String
     age::Int => (value => 0, access => AccessMode.READABLE_WRITABLE)
-    ssn::String => (access => AccessMode.READABLE)  # Write-once, read-only
     address::String => (
         read_callback => (obj, name, val) -> "REDACTED",  # Custom read transformation
         write_callback => (obj, name, val) -> uppercase(val)  # Custom write transformation
+    )
+    email::String => (
+        write_callback => (obj, name, val) -> lowercase(val)  # Always store lowercase
+    )
+    score::Int => (
+        value => 0,
+        read_callback => (obj, name, val) -> val * 2,      # Double when reading
+        write_callback => (obj, name, val) -> max(0, val)  # Ensure non-negative
     )
 end
 
@@ -44,12 +51,13 @@ person = Person()
 # Set properties
 set_property!(person, :name, "Alice")
 set_property!(person, :age, 30)
-set_property!(person, :ssn, "123-45-6789")
+set_property!(person, :email, "alice@example.com")
 set_property!(person, :address, "123 Main St")
 
 # Access properties
 println(get_property(person, :name))    # "Alice"
 println(get_property(person, :address)) # "REDACTED" (read callback applied)
+println(get_property(person, :email))   # "alice@example.com" (stored lowercase)
 
 # Check property status
 println(is_set(person, :name))          # true
@@ -57,9 +65,9 @@ println(is_set(person, :name))          # true
 # Reset a property to unset state
 reset_property!(person, :address)
 println(is_set(person, :address))       # false
-println(all_properties_set(person))     # true if all properties are set
-println(is_readable(person, :ssn))      # true
-println(is_writable(person, :ssn))      # false
+println(all_properties_set(person))     # false (address property was reset)
+println(is_readable(person, :email))    # true
+println(is_writable(person, :address))  # true
 ```
 
 ## Property Definition Syntax
@@ -67,6 +75,13 @@ println(is_writable(person, :ssn))      # false
 The `@properties` macro allows defining properties with various attributes:
 
 ```julia
+
+function transform_for_reading(obj, name, val)
+end
+
+function transform_for_writing(obj, name, val)
+end
+
 @properties TypeName begin
     # Basic property with default settings
     basic_prop::Type
@@ -79,8 +94,8 @@ The `@properties` macro allows defining properties with various attributes:
     
     # Property with custom callbacks
     custom_prop::Type => (
-        read_callback => (obj, name, val) -> transform_for_reading(val),
-        write_callback => (obj, name, val) -> transform_for_writing(val)
+        read_callback => transform_for_reading(obj, name, val),
+        write_callback => transform_for_writing(obj, name, val)
     )
     
     # Combining multiple attributes
@@ -102,27 +117,103 @@ The `AccessMode` module provides flags to control property access:
 - `AccessMode.WRITABLE`: Property can be written (0x02)
 - `AccessMode.READABLE_WRITABLE`: Property can be both read and written (READABLE | WRITABLE)
 
+## Property Callbacks
+
+Callbacks in ManagedProperties.jl provide a powerful way to transform, validate, or process values during read and write operations.
+
+### Callback Function Signatures
+
+Both read and write callbacks follow the same function signature:
+
+```julia
+callback_function(obj, prop_name, value) -> transformed_value
+```
+
+Where:
+- `obj`: The instance of your type that owns the property
+- `prop_name`: The Symbol representing the property name
+- `value`: The current value (for read callbacks) or the input value (for write callbacks)
+- `transformed_value`: The value returned after transformation (must be of the same type as the property)
+
+### Read Callbacks
+
+Read callbacks are executed when `get_property` is called and allow you to transform the raw stored value before it's returned to the caller:
+
+- Executed during: `get_property(obj, prop_name)`
+- Input: The actual stored value
+- Output: The transformed value returned to the caller
+- Common uses: Masking sensitive data, formatting values, applying transformations, computing derived values
+
+### Write Callbacks
+
+Write callbacks are executed when `set_property!` is called and allow you to transform or validate input values before they're stored:
+
+- Executed during: `set_property!(obj, prop_name, value)`
+- Input: The value provided to `set_property!`
+- Output: The transformed value that will be stored
+- Common uses: Validation, normalization, type conversion, enforcement of business rules
+
+### Callback Order and Flow
+
+1. When writing a property (`set_property!`):
+   - The write callback is applied first to transform the input value
+   - The transformed value is then stored in the property
+   - The timestamp is updated
+
+2. When reading a property (`get_property`):
+   - The raw stored value is retrieved
+   - The read callback is applied to transform the value
+   - The transformed value is returned
+
+### Examples
+
+```julia
+# Simple validation example
+age_validator(obj, name, val) = max(0, min(120, val))  # Clamp age between 0-120
+
+# Data privacy example
+card_masker(obj, name, val) = "XXXX-XXXX-XXXX-" * last(val, 4)  # Show only last 4 digits
+
+# Data transformation example
+name_normalizer(obj, name, val) = titlecase(val)  # Ensure consistent capitalization
+
+# Using callbacks in property definition
+@properties Person begin
+    name::String => (write_callback => name_normalizer)
+    age::Int => (write_callback => age_validator)
+    credit_card::String => (read_callback => card_masker)
+end
+```
+
 ## Advanced Usage
 
 ### Using Anonymous Functions for Callbacks
 
-You can use anonymous functions for property callbacks:
+As seen in the `Person` example above, you can use anonymous functions for property callbacks:
 
 ```julia
-@properties Person begin
+@properties CustomCallbacks begin
     # Anonymous function for read callback
-    name::String => (
-        read_callback => (obj, name, val) -> uppercase(val)
+    username::String => (
+        read_callback => (obj, name, val) -> uppercase(val)  # Always show uppercase
     )
     
     # Anonymous function for write callback
-    email::String => (
-        write_callback => (obj, name, val) -> lowercase(val)
+    password::String => (
+        read_callback => (obj, name, val) -> "********",     # Hide actual value
+        write_callback => (obj, name, val) -> hash(val)      # Store hashed value
     )
     
-    # Both read and write callbacks
+    # Data validation with callbacks
+    age::Int => (
+        value => 18,
+        write_callback => (obj, name, val) -> max(0, min(120, val))  # Clamp between 0-120
+    )
+    
+    # Combined read/write transformations
     score::Int => (
-        read_callback => (obj, name, val) -> val * 2,
+        value => 0,
+        read_callback => (obj, name, val) -> val * 2,      # Double the score when read
         write_callback => (obj, name, val) -> max(0, val)  # Ensure non-negative
     )
 end
@@ -137,26 +228,32 @@ result = with_property!(person, :age) do age
 end
 set_property!(person, :age, result)  # Need to explicitly update the property
 
-# Calculate area without modifying properties
-area = with_properties(person, :width, :height) do width, height
-    width * height
+# Calculate numeric values without modifying properties
+average_score = with_properties(person, :age, :score) do age, score
+    (age + score) / 2  # Calculate average of age and score
 end
 
 # To update multiple properties, you need to get and set them individually
-x = get_property(person, :x) + 10
-y = get_property(person, :y) + 5
-set_property!(person, :x, x)
-set_property!(person, :y, y)
+name = get_property(person, :name) * " Smith"  # Add surname
+age = get_property(person, :age) + 1          # Increment age
+set_property!(person, :name, name)
+set_property!(person, :age, age)
 ```
 
-### Property Metadata
+### Property Metadata and Information
 
 ```julia
 # Get property type
-println(property_type(person, :age))  # Int64
+println(property_type(person, :age))     # Int64
+println(property_type(person, :address)) # String
 
 # Check when a property was last updated
 last_updated = last_update(person, :name)  # Timestamp in nanoseconds
+
+# Check access permissions
+println(is_readable(person, :address))  # true
+println(is_writable(person, :address))  # true
+println(is_writable(person, :score))    # true
 ```
 
 ## Full API Documentation
