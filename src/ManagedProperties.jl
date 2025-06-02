@@ -26,6 +26,13 @@ println(get_property(person, :name))  # "Alice"
 """
 module ManagedProperties
 
+# Export public API
+export @properties, AccessMode
+export get_property, set_property!, reset_property!, property_type, is_set, all_properties_set
+export with_property, with_property!
+export with_properties
+export is_readable, is_writable, last_update
+
 # Access mode flags
 """
     AccessMode
@@ -515,82 +522,6 @@ macro properties(struct_name, args...)
             getfield(p, s).last_update
         end
 
-        # Add pretty printing support
-        # function Base.show(io::IO, ::MIME"text/plain", p::$(struct_name){C}) where {C}
-        #     println(io, "$($(QuoteNode(struct_name))){$C} with properties:")
-
-        #     # Get property information
-        #     names = propertynames(p)[1:end-1]
-        #     types = [typeof(getfield(p, name).value) for name in names]
-        #     types = $(Symbol("$(struct_name)_PROPS")).types
-
-        #     # Maximum name length for alignment
-        #     max_name_len = maximum(length(string(name)) for name in names)
-
-        #     # Print each property
-        #     for i in 1:length(names)
-        #         name = names[i]
-        #         specs = getfield(p, name)
-
-        #         # Access flags string representation
-        #         access_str = ""
-        #         if AccessMode.is_readable(specs.access_flags)
-        #             access_str *= "R"
-        #         else
-        #             access_str *= "-"
-        #         end
-        #         if AccessMode.is_writable(specs.access_flags)
-        #             access_str *= "W"
-        #         else
-        #             access_str *= "-"
-        #         end
-
-        #         # Value representation
-        #         value_str = if isnothing(specs.value)
-        #             "nothing"
-        #         elseif specs.value isa AbstractArray
-        #             type_str = string(typeof(specs.value).parameters[1])
-        #             dims_str = join(size(specs.value), "×")
-        #             "$(type_str)[$dims_str]"
-        #         else
-        #             repr(specs.value)
-        #         end
-
-        #         # Callbacks info
-        #         read_cb = specs.read_callback === ManagedProperties._default_read_callback ? "" : " (custom read)"
-        #         write_cb = specs.write_callback === ManagedProperties._default_write_callback ? "" : " (custom write)"
-        #         cb_str = read_cb * write_cb
-
-        #         # Last update time
-        #         time_str = if specs.last_update == -1
-        #             "never"
-        #         else
-        #             "$(specs.last_update) ns"
-        #         end
-
-        #         name_padded = lpad(string(name), max_name_len)
-        #         type_str = rpad(string(types[i]), 20)
-        #         value_padded = rpad(value_str, 15)
-        #         println(io, "  $(name_padded) :: $(type_str) = $(value_padded) [$(access_str)]$(cb_str) (last update: $(time_str))")
-        #     end
-        # end
-
-        # Add a compact version for regular show
-        function Base.show(io::IO, p::$(struct_name))
-            print(io, "$($(QuoteNode(struct_name)))")
-            names = propertynames(p)[1:end-1]
-            set_count = 0
-            total = length(names)
-
-            for name in names
-                if !isnothing(getfield(p, name).value)
-                    set_count += 1
-                end
-            end
-
-            print(io, " $(set_count)/$(total) properties set")
-        end
-
         """
             with_property(f::Function, p, s::Symbol)
 
@@ -744,6 +675,81 @@ macro properties(struct_name, args...)
             return nothing
         end
 
+        # Add pretty printing support
+        function Base.show(io::IO, ::MIME"text/plain", p::$(struct_name){C}) where {C}
+            println(io, "$($(QuoteNode(struct_name))){$C} with properties:")
+
+            # Get property information
+            names = propertynames(p)[1:end-1]
+            types = [property_type(p, name) for name in names]
+
+            # Maximum name length for alignment
+            max_name_len = maximum(length(string(name)) for name in names)
+
+            # Print each property
+            for i in 1:length(names)
+                name = names[i]
+                specs = getfield(p, name)
+
+                # Access flags string representation
+                access_str = ""
+                if AccessMode.is_readable(specs.access_flags)
+                    access_str *= "R"
+                else
+                    access_str *= "-"
+                end
+                if AccessMode.is_writable(specs.access_flags)
+                    access_str *= "W"
+                else
+                    access_str *= "-"
+                end
+
+                # Value representation
+                value_str = if isnothing(specs.value)
+                    "nothing"
+                elseif specs.value isa AbstractArray
+                    type_str = string(typeof(specs.value).parameters[1])
+                    dims_str = join(size(specs.value), "×")
+                    "$(type_str)[$dims_str]"
+                else
+                    repr(specs.value)
+                end
+
+                # Callbacks info
+                read_cb = specs.read_callback === ManagedProperties._default_read_callback ? "" : " (custom read)"
+                write_cb = specs.write_callback === ManagedProperties._default_write_callback ? "" : " (custom write)"
+                cb_str = read_cb * write_cb
+
+                # Last update time
+                time_str = if specs.last_update == -1
+                    "never"
+                else
+                    "$(specs.last_update) ns"
+                end
+
+                name_padded = rpad(string(name), max_name_len)
+                type_str = rpad(string(types[i]), 20)
+                value_padded = rpad(value_str, 20)
+                println(io, "  $(name_padded) :: $(type_str) = $(value_padded) [$(access_str)]$(cb_str) (last update: $(time_str))")
+            end
+        end
+
+        # Add a compact version for regular show
+        function Base.show(io::IO, p::$(struct_name))
+            print(io, "$($(QuoteNode(struct_name)))")
+            names = propertynames(p)[1:end-1]
+            set_count = 0
+            total = length(names)
+
+            for name in names
+                if !isnothing(getfield(p, name).value)
+                    set_count += 1
+                end
+            end
+
+            print(io, " $(set_count)/$(total) properties set")
+        end
+
         # Precompilation directives for general property operations
         Base.precompile(Tuple{typeof(get_property),$(struct_name),Symbol})
         Base.precompile(Tuple{typeof(set_property!),$(struct_name),Symbol,Any})
@@ -773,12 +779,5 @@ macro properties(struct_name, args...)
 
     return esc(result)
 end
-
-# Export public API
-export @properties, AccessMode
-export get_property, set_property!, reset_property!, property_type, is_set, all_properties_set
-export with_property, with_property!
-export with_properties
-export is_readable, is_writable, last_update
 
 end # module
