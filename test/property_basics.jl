@@ -35,9 +35,9 @@ function test_property_basics()
     @test property_type(t, :optional) === Float64
     
     # Test property type from type (not instance)
-    # @test property_type(TestBasic, :name) === String
-    # @test property_type(TestBasic, :age) === Int
-    # @test property_type(TestBasic, :optional) === Float64
+    @test property_type(TestBasic, :name) === String
+    @test property_type(TestBasic, :age) === Int
+    @test property_type(TestBasic, :optional) === Float64
     
     # Test error handling for non-existent properties
     @test_throws ErrorException get_property(t, :nonexistent)

@@ -304,7 +304,7 @@ macro properties(struct_name, args...)
     # Build type parameter list for all PropertySpecs and clock
     ps_type_syms = [Symbol(:PS, i) for i in 1:length(props)]
     all_type_syms = [ps_type_syms..., :C]
-    struct_type_params = Expr(:curly, struct_name, [Expr(:<:, ps, :(ManagedProperties.PropertySpecs)) for ps in ps_type_syms]..., Expr(:<:, :C, :(Clocks.AbstractClock)))
+    struct_type_params = Expr(:curly, struct_name, [Expr(:<:, ps, :(ManagedProperties.PropertySpecs{$(prop_types[i])})) for (i, ps) in enumerate(ps_type_syms)]..., Expr(:<:, :C, :(Clocks.AbstractClock)))
 
     # Build the struct body with parametric PropertySpecs types
     struct_body = Expr(:block)
@@ -334,18 +334,10 @@ macro properties(struct_name, args...)
     # Create the complete struct definition
     struct_def = Expr(:struct, true, struct_type_params, struct_body)
 
-    # Generate property information
-    prop_info = :(const $(Symbol("$(struct_name)_PROPS")) = (;
-        types=$(Expr(:tuple, [type for type in prop_types]...))
-    ))
-
     # Generate accessor functions
     result = quote
         # Define the struct
         $(struct_def)
-
-        # Store property metadata
-        $(prop_info)
 
         # Property access functions (allocation-free)
         """
@@ -443,6 +435,7 @@ macro properties(struct_name, args...)
             s in fieldnames(T)[1:end-1] || return nothing
             FT = fieldtype(T, s)
             get_valtype(::Type{ManagedProperties.PropertySpecs{T,R,W}}) where {T,R,W} = T
+            get_valtype(::Type{ManagedProperties.PropertySpecs{T}}) where {T} = T
             get_valtype(FT)
         end
 
