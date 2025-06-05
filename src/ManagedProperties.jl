@@ -254,6 +254,8 @@ macro properties(struct_name, args...)
     default_read_callback = nothing
     default_write_callback = nothing
 
+    clock_field = gensym(:clock)
+
     # The last argument should always be the property block
     if length(args) < 1
         error("@properties requires a begin...end block after the struct name")
@@ -311,7 +313,7 @@ macro properties(struct_name, args...)
     for i in 1:length(props)
         push!(struct_body.args, Expr(:(::), prop_names[i], Symbol(:PS, i)))
     end
-    push!(struct_body.args, :(_clock::C))
+    push!(struct_body.args, Expr(:(::), clock_field, :C))
 
     # Build the parametric constructor (infers PropertySpecs types)
     param_constructor = quote
@@ -330,14 +332,41 @@ macro properties(struct_name, args...)
 
     # Add the constructor to the struct body
     push!(struct_body.args, param_constructor.args[2])
-
-    # Create the complete struct definition
     struct_def = Expr(:struct, true, struct_type_params, struct_body)
+
+    # Helper for clock field access in generated code
+    clock_access = Expr(:call, :getfield, :p, QuoteNode(clock_field))
 
     # Generate accessor functions
     result = quote
         # Define the struct
         $(struct_def)
+
+        """
+            property_names(p)
+
+        Return a tuple of property names (as Symbols) for a managed properties object.
+        This excludes internal fields like `_clock`.
+
+        # Arguments
+        - `p`: An object created with `@properties`
+
+        # Returns
+        - A tuple of property names (Symbols) representing the user-defined properties
+
+        # Example
+        ```julia
+        names = property_names(person)  # (:name, :age, :address, ...)
+        for name in property_names(person)
+            println(name, " = ", get_property(person, name))
+        end
+        ```
+        """
+        @inline function property_names(p::$(struct_name))
+            # Exclude the last field (which is always the clock field)
+            # This returns only the user-defined property names
+            propertynames(p)[1:end-1]
+        end
 
         # Property access functions (allocation-free)
         """
@@ -353,7 +382,7 @@ macro properties(struct_name, args...)
         - `true` if the property is set, `false` otherwise
         """
         @inline function is_set(p::$(struct_name), s::Symbol)
-            s in propertynames(p)[1:end-1] && !isnothing(getfield(p, s).value)
+            s in property_names(p) && !isnothing(getfield(p, s).value)
         end
 
         """
@@ -368,7 +397,7 @@ macro properties(struct_name, args...)
         - `true` if all properties are set, `false` otherwise
         """
         @inline function all_properties_set(p::$(struct_name))
-            all(!isnothing(getfield(p, n).value) for n in propertynames(p)[1:end-1])
+            all(!isnothing(getfield(p, n).value) for n in property_names(p))
         end
 
         """
@@ -387,7 +416,7 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not readable, not set, or not found
         """
         @inline function get_property(p::$(struct_name), s::Symbol)
-            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            s in property_names(p) || throw(ErrorException("Property not found"))
             specs = getfield(p, s)
             !AccessMode.is_readable(specs.access_flags) && throw(ErrorException("Property not readable"))
             isnothing(specs.value) && throw(ErrorException("Property not set"))
@@ -411,11 +440,11 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not writable or not found
         """
         @inline function set_property!(p::$(struct_name), s::Symbol, v)
-            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            s in property_names(p) || throw(ErrorException("Property not found"))
             specs = getfield(p, s)
             !AccessMode.is_writable(specs.access_flags) && throw(ErrorException("Property not writable"))
             specs.value = specs.write_callback(p, s, v)
-            specs.last_update = Clocks.time_nanos(p._clock)
+            specs.last_update = Clocks.time_nanos($(clock_access))
             return specs.value
         end
 
@@ -469,7 +498,7 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not found
         """
         @inline function is_readable(p::$(struct_name), s::Symbol)
-            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            s in property_names(p) || throw(ErrorException("Property not found"))
             specs = getfield(p, s)
             AccessMode.is_readable(specs.access_flags)
         end
@@ -490,7 +519,7 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not found
         """
         @inline function is_writable(p::$(struct_name), s::Symbol)
-            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            s in property_names(p) || throw(ErrorException("Property not found"))
             specs = getfield(p, s)
             AccessMode.is_writable(specs.access_flags)
         end
@@ -511,7 +540,7 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not found
         """
         @inline function last_update(p::$(struct_name), s::Symbol)
-            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            s in property_names(p) || throw(ErrorException("Property not found"))
             getfield(p, s).last_update
         end
 
@@ -540,7 +569,7 @@ macro properties(struct_name, args...)
         """
         # Non-mutating version for read-only operations
         @inline function with_property(f::Function, p::$(struct_name), s::Symbol)
-            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            s in property_names(p) || throw(ErrorException("Property not found"))
             specs = getfield(p, s)
             isnothing(specs.value) && throw(ErrorException("Property not set"))
             !AccessMode.is_readable(specs.access_flags) && throw(ErrorException("Property not readable"))
@@ -588,7 +617,7 @@ macro properties(struct_name, args...)
         """
         # Mutating version for in-place operations (non-isbits types only)
         @inline function with_property!(f::Function, p::$(struct_name), s::Symbol)
-            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            s in property_names(p) || throw(ErrorException("Property not found"))
             specs = getfield(p, s)
             isbits(specs.value) && throw(ErrorException("Property is isbits cannot mutate in-place"))
             isnothing(specs.value) && throw(ErrorException("Property not set"))
@@ -597,7 +626,7 @@ macro properties(struct_name, args...)
             value = specs.read_callback(p, s, specs.value)
             result = f(value)
             specs.write_callback(p, s, value)
-            specs.last_update = Clocks.time_nanos(p._clock)
+            specs.last_update = Clocks.time_nanos($(clock_access))
             return result
         end
 
@@ -628,7 +657,7 @@ macro properties(struct_name, args...)
         @inline function with_properties(f::Function, p::$(struct_name), properties::Symbol...)
             @inline function val_generator(i)
                 s = properties[i]
-                s in propertynames(p)[1:end-1] || throw(ErrorException("Property $s not found"))
+                s in property_names(p) || throw(ErrorException("Property $s not found"))
                 specs = getfield(p, s)
                 isnothing(specs.value) && throw(ErrorException("Property $s not set"))
                 !AccessMode.is_readable(specs.access_flags) && throw(ErrorException("Property $s not readable"))
@@ -660,7 +689,7 @@ macro properties(struct_name, args...)
         ```
         """
         @inline function reset_property!(p::$(struct_name), s::Symbol)
-            s in propertynames(p)[1:end-1] || throw(ErrorException("Property not found"))
+            s in property_names(p) || throw(ErrorException("Property not found"))
             specs = getfield(p, s)
             !AccessMode.is_writable(specs.access_flags) && throw(ErrorException("Property not writable"))
             specs.value = nothing
@@ -673,7 +702,7 @@ macro properties(struct_name, args...)
             println(io, "$($(QuoteNode(struct_name))){$C} with properties:")
 
             # Get property information
-            names = propertynames(p)[1:end-1]
+            names = property_names(p)
             types = [property_type(p, name) for name in names]
 
             # Maximum name length for alignment
@@ -730,7 +759,7 @@ macro properties(struct_name, args...)
         # Add a compact version for regular show
         function Base.show(io::IO, p::$(struct_name))
             print(io, "$($(QuoteNode(struct_name)))")
-            names = propertynames(p)[1:end-1]
+            names = property_names(p)
             set_count = 0
             total = length(names)
 
@@ -769,7 +798,6 @@ macro properties(struct_name, args...)
             Base.precompile(Tuple{typeof(is_writable),$(struct_name),typeof($(QuoteNode(name)))})
         ) for (i, name) in enumerate(prop_names)]...)
     end
-
     return esc(result)
 end
 
