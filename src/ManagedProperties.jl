@@ -32,6 +32,7 @@ export get_property, set_property!, reset_property!, property_type, is_set, all_
 export with_property, with_property!
 export with_properties
 export is_readable, is_writable, last_update
+export property_names
 
 # Access mode flags
 """
@@ -346,7 +347,6 @@ macro properties(struct_name, args...)
             property_names(p)
 
         Return a tuple of property names (as Symbols) for a managed properties object.
-        This excludes internal fields like `_clock`.
 
         # Arguments
         - `p`: An object created with `@properties`
@@ -772,6 +772,224 @@ macro properties(struct_name, args...)
             print(io, " $(set_count)/$(total) properties set")
         end
 
+                """
+            obj[key::Symbol]
+
+        Get a property value using indexing syntax. Equivalent to `get_property(obj, key)`.
+
+        # Example
+        ```julia
+        name = person[:name]  # Same as get_property(person, :name)
+        ```
+        """
+        @inline function Base.getindex(p::$(struct_name), key::Symbol)
+            get_property(p, key)
+        end
+
+        """
+            obj[key1::Symbol, key2::Symbol, ...]
+
+        Get multiple property values using indexing syntax. Returns a tuple of values.
+
+        # Example
+        ```julia
+        name, age = person[:name, :age]  # Destructure into variables
+        values = person[:name, :age, :email]  # Get tuple of values
+        ```
+        """
+        @inline function Base.getindex(p::$(struct_name), keys::Symbol...)
+            ntuple(i -> get_property(p, keys[i]), length(keys))
+        end
+
+        """
+            obj[key::Symbol] = value
+
+        Set a property value using indexing syntax. Equivalent to `set_property!(obj, key, value)`.
+
+        # Example
+        ```julia
+        person[:name] = "Alice"  # Same as set_property!(person, :name, "Alice")
+        ```
+        """
+        @inline function Base.setindex!(p::$(struct_name), value, key::Symbol)
+            set_property!(p, key, value)
+        end
+
+        """
+            obj[key1::Symbol, key2::Symbol, ...] = values
+
+        Set multiple property values using indexing syntax. Values can be provided as:
+        - A tuple: `obj[:name, :age] = ("Alice", 30)`
+        - An array/vector: `obj[:name, :age] = ["Alice", 30]`
+        - Any iterable collection: `obj[:name, :age] = ("Alice", 30)`
+
+        The number of values must match the number of property keys.
+
+        # Example
+        ```julia
+        person[:name, :age] = ("Alice", 30)        # Tuple assignment
+        person[:name, :age] = ["Alice", 30]        # Array assignment  
+        person[:name, :age, :email] = ("Bob", 25, "bob@example.com")  # Multiple properties
+        ```
+        """
+        @inline function Base.setindex!(p::$(struct_name), values, keys::Symbol...)
+            length(values) == length(keys) || throw(ArgumentError("Number of values (\$(length(values))) must match number of keys (\$(length(keys)))"))
+            for (i, key) in enumerate(keys)
+                set_property!(p, key, values[i])
+            end
+            return values
+        end
+
+        """
+            keys(obj)
+
+        Return an iterator over the property names of a managed properties object.
+
+        # Example
+        ```julia
+        for prop_name in keys(person)
+            println(prop_name)
+        end
+        ```
+        """
+        @inline Base.keys(p::$(struct_name)) = property_names(p)
+
+        """
+            values(obj)
+
+        Return an iterator over the property values of a managed properties object.
+        Only returns values for properties that are set (not `nothing`).
+
+        # Example
+        ```julia
+        for prop_value in values(person)
+            println(prop_value)
+        end
+        ```
+        """
+        @inline function Base.values(p::$(struct_name))
+            (get_property(p, k) for k in property_names(p) if is_set(p, k))
+        end
+
+        """
+            pairs(obj)
+
+        Return an iterator over (name, value) pairs for all set properties.
+
+        # Example
+        ```julia
+        for (name, value) in pairs(person)
+            println("\$name = \$value")
+        end
+        ```
+        """
+        @inline function Base.pairs(p::$(struct_name))
+            ((k, get_property(p, k)) for k in property_names(p) if is_set(p, k))
+        end
+
+        """
+            iterate(obj)
+            iterate(obj, state)
+
+        Allow iteration over (name, value) pairs of set properties.
+
+        # Example
+        ```julia
+        for (name, value) in person
+            println("\$name = \$value")
+        end
+        ```
+        """
+        @inline function Base.iterate(p::$(struct_name))
+            set_props = filter(k -> is_set(p, k), property_names(p))
+            isempty(set_props) && return nothing
+            first_key = first(set_props)
+            (first_key, get_property(p, first_key)), (set_props, 2)
+        end
+
+        @inline function Base.iterate(p::$(struct_name), state)
+            set_props, index = state
+            index > length(set_props) && return nothing
+            key = set_props[index]
+            (key, get_property(p, key)), (set_props, index + 1)
+        end
+
+        """
+            length(obj)
+
+        Return the number of set properties (not the total number of defined properties).
+
+        # Example
+        ```julia
+        println("Number of set properties: \$(length(person))")
+        ```
+        """
+        @inline function Base.length(p::$(struct_name))
+            count = 0
+            $([:(is_set(p, $(QuoteNode(name))) && (count += 1)) for name in prop_names]...)
+            count
+        end
+
+        """
+            haskey(obj, key::Symbol)
+
+        Check if a property name exists (regardless of whether it's set).
+
+        # Example
+        ```julia
+        if haskey(person, :name)
+            println("Person has a name property")
+        end
+        ```
+        """
+        @inline Base.haskey(p::$(struct_name), key::Symbol) = key in property_names(p)
+
+        """
+            get(obj, key::Symbol, default)
+
+        Get a property value, returning `default` if the property is not set or doesn't exist.
+
+        # Example
+        ```julia
+        age = get(person, :age, 0)  # Returns 0 if age is not set
+        ```
+        """
+        @inline function Base.get(p::$(struct_name), key::Symbol, default)
+            haskey(p, key) && is_set(p, key) ? get_property(p, key) : default
+        end
+
+        """
+            isreadable(obj, key::Symbol)
+
+        Check if a property is readable (has read access permissions).
+
+        # Example
+        ```julia
+        if isreadable(person, :name)
+            println("Name property can be read")
+        end
+        ```
+        """
+        @inline function Base.isreadable(p::$(struct_name), key::Symbol)
+            is_readable(p, key)
+        end
+
+        """
+            iswritable(obj, key::Symbol)
+
+        Check if a property is writable (has write access permissions).
+
+        # Example
+        ```julia
+        if iswritable(person, :name)
+            println("Name property can be modified")
+        end
+        ```
+        """
+        @inline function Base.iswritable(p::$(struct_name), key::Symbol)
+            is_writable(p, key)
+        end        
+
         # Precompilation directives for general property operations
         Base.precompile(Tuple{typeof(get_property),$(struct_name),Symbol})
         Base.precompile(Tuple{typeof(set_property!),$(struct_name),Symbol,Any})
@@ -782,6 +1000,20 @@ macro properties(struct_name, args...)
         Base.precompile(Tuple{typeof(is_writable),$(struct_name),Symbol})
         Base.precompile(Tuple{typeof(last_update),$(struct_name),Symbol})
         Base.precompile(Tuple{typeof(property_type),$(struct_name),Symbol})
+
+        # Precompilation for Base interface methods
+        Base.precompile(Tuple{typeof(Base.getindex),$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(Base.setindex!),$(struct_name),Any,Symbol})
+        Base.precompile(Tuple{typeof(Base.setindex!),$(struct_name),Any,Vararg{Symbol}})
+        Base.precompile(Tuple{typeof(Base.keys),$(struct_name)})
+        Base.precompile(Tuple{typeof(Base.values),$(struct_name)})
+        Base.precompile(Tuple{typeof(Base.pairs),$(struct_name)})
+        Base.precompile(Tuple{typeof(Base.iterate),$(struct_name)})
+        Base.precompile(Tuple{typeof(Base.length),$(struct_name)})
+        Base.precompile(Tuple{typeof(Base.haskey),$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(Base.get),$(struct_name),Symbol,Any})
+        Base.precompile(Tuple{typeof(Base.isreadable),$(struct_name),Symbol})
+        Base.precompile(Tuple{typeof(Base.iswritable),$(struct_name),Symbol})
 
         # Precompile with_property variants
         Base.precompile(Tuple{typeof(with_property),Function,$(struct_name),Symbol})

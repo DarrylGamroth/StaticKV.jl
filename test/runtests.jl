@@ -14,6 +14,7 @@ include("edge_cases.jl")
 include("anonymous_callbacks.jl")
 include("allocation_tests.jl")
 include("default_callbacks.jl")
+include("property_bag_interface.jl")
 
 # Run all tests
 @testset verbose=true "ManagedProperties.jl" begin
@@ -43,6 +44,10 @@ include("default_callbacks.jl")
     
     @testset "Anonymous Callbacks" begin
         test_anonymous_callbacks()
+    end
+    
+    @testset "Property Bag Interface" begin
+        test_property_bag_interface()
     end
     
     @testset "Allocation Tests" begin
