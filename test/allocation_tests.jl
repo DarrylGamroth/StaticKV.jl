@@ -49,6 +49,16 @@ function test_allocations()
     t1 = AllocationTest()
     t2 = CallbackTest()
 
+    # Warm up functions to ensure proper precompilation
+    @info "Warming up functions..."
+    get_property(t1, :int_val)
+    set_property!(t1, :int_val, 100)
+    is_set(t1, :int_val)
+    get_property(t2, :int_val)
+    with_property(t1, :int_val) do x; x + 1; end
+    with_property!(t1, :vector_val) do v; v[1] = 1; v; end
+    with_properties(t1, :int_val, :float_val) do i, f; i + f; end
+
     # Only keep one comprehensive isbits allocation testset (removes redundancy)
     @testset "get_property allocation - isbits (all)" begin
         for (field, val) in (
@@ -72,9 +82,9 @@ function test_allocations()
             :uint128_val => UInt128(11)
         )
             set_property!(t1, field, val)
-            allocs = @eval @ballocated get_property($t1, $(QuoteNode(field)))
+            allocs = @ballocated get_property($t1, $field)
             @info "$(field) get_property allocations: $(allocs) bytes"
-            allocs2 = @eval @ballocated is_set($t1, $(QuoteNode(field)))
+            allocs2 = @ballocated is_set($t1, $field)
             @test allocs == 0
             @test allocs2 == 0
         end
@@ -101,7 +111,7 @@ function test_allocations()
             :uint64_val => UInt64(10),
             :uint128_val => UInt128(12)
         )
-            allocs = @eval @ballocated set_property!($t1, $(QuoteNode(field)), $val)
+            allocs = @ballocated set_property!($t1, $field, $val)
             @info "$(field) set_property! allocations: $(allocs) bytes"
             @test allocs == 0
         end
@@ -109,52 +119,52 @@ function test_allocations()
 
     # Keep non-isbits and callback/mutable type allocation tests
     @testset "Symbol allocation" begin
-        allocs1 = @eval @ballocated get_property($t1, :symbol_val)
+        allocs1 = @ballocated get_property($t1, :symbol_val)
         @info "Symbol get_property allocations: $(allocs1)"
         @test allocs1 == 0
-        allocs2 = @eval @ballocated set_property!($t1, :symbol_val, :new_symbol)
+        allocs2 = @ballocated set_property!($t1, :symbol_val, :new_symbol)
         @info "Symbol set_property! allocations: $(allocs2)"
         @test allocs2 == 0
-        allocs3 = @eval @ballocated is_set($t1, :symbol_val)
+        allocs3 = @ballocated is_set($t1, :symbol_val)
         @info "Symbol is_set allocations: $(allocs3)"
         @test allocs3 == 0
     end
 
     @testset "String allocation" begin
-        allocs1 = @eval @ballocated get_property($t1, :string_val)
+        allocs1 = @ballocated get_property($t1, :string_val)
         @info "String get_property allocations: $allocs1"
-        allocs2 = @eval @ballocated set_property!($t1, :string_val, "new_string")
+        allocs2 = @ballocated set_property!($t1, :string_val, "new_string")
         @info "String set_property! allocations: $allocs2"
-        allocs3 = @eval @ballocated is_set($t1, :string_val)
+        allocs3 = @ballocated is_set($t1, :string_val)
         @test allocs1 == 0
         @test allocs2 == 0
         @test allocs3 == 0
     end
 
     @testset "Vector allocation" begin
-        allocs1 = @eval @ballocated get_property($t1, :vector_val)
+        allocs1 = @ballocated get_property($t1, :vector_val)
         @info "Vector get_property allocations: $allocs1"
-        allocs2 = @eval @ballocated set_property!($t1, :vector_val, [4, 5, 6])
+        allocs2 = @ballocated set_property!($t1, :vector_val, [4, 5, 6])
         @info "Vector set_property! allocations: $allocs2"
-        allocs3 = @eval @ballocated is_set($t1, :vector_val)
+        allocs3 = @ballocated is_set($t1, :vector_val)
         @test allocs1 == 0
         # Do not require allocs2 == 0: assigning a new array always allocates
         @test allocs3 == 0
     end
 
     @testset "Matrix allocation" begin
-        allocs1 = @eval @ballocated get_property($t1, :matrix_val)
+        allocs1 = @ballocated get_property($t1, :matrix_val)
         @info "Matrix get_property allocations: $allocs1"
-        allocs2 = @eval @ballocated set_property!($t1, :matrix_val, [5.0 6.0; 7.0 8.0])
+        allocs2 = @ballocated set_property!($t1, :matrix_val, [5.0 6.0; 7.0 8.0])
         @info "Matrix set_property! allocations: $allocs2"
-        allocs3 = @eval @ballocated is_set($t1, :matrix_val)
+        allocs3 = @ballocated is_set($t1, :matrix_val)
         @test allocs1 == 0
         # Do not require allocs2 == 0: assigning a new array always allocates
         @test allocs3 == 0
     end
 
     @testset "with_property allocation - isbits" begin
-        allocs = @eval @ballocated with_property($t1, :int_val) do val
+        allocs = @ballocated with_property($t1, :int_val) do val
             val + 1
         end
         @test allocs == 0
@@ -162,12 +172,12 @@ function test_allocations()
     end
 
     @testset "with_property allocation - Vector" begin
-        allocs = @eval @ballocated with_property!($t1, :vector_val) do vec
+        allocs = @ballocated with_property!($t1, :vector_val) do vec
             push!(vec, 4)
             vec
         end
         @info "with_property! Vector allocations (push!): $allocs"
-        allocs = @eval @ballocated with_property!($t1, :vector_val) do vec
+        allocs = @ballocated with_property!($t1, :vector_val) do vec
             vec[1] = 99
             vec
         end
@@ -176,13 +186,13 @@ function test_allocations()
     end
 
     @testset "with_property allocation - Matrix" begin
-        allocs = @eval @ballocated with_property!($t1, :matrix_val) do mat
+        allocs = @ballocated with_property!($t1, :matrix_val) do mat
             mat[1, 1] = 99.0
             mat
         end
         @test allocs == 0
         @info "with_property! Matrix allocations (index set): $allocs"
-        allocs = @eval @ballocated with_property!($t1, :matrix_val) do mat
+        allocs = @ballocated with_property!($t1, :matrix_val) do mat
             mat .= mat .* 2
             mat
         end
@@ -191,16 +201,16 @@ function test_allocations()
     end
 
     @testset "Custom callbacks allocation" begin
-        allocs = @eval @ballocated get_property($t2, :int_val) evals = 1 samples = 1
+        allocs = @ballocated get_property($t2, :int_val)
         @test allocs == 0
         @info "Custom int callback allocations: $allocs"
-        allocs = @eval @ballocated get_property($t2, :any_val) evals = 1 samples = 1
+        allocs = @ballocated get_property($t2, :any_val)
         @test allocs == 0
         @info "Custom any->string callback allocations: $allocs"
     end
 
     @testset "Multiple property operations" begin
-        allocs = @eval @ballocated with_properties($t1, :int_val, :float_val) do i, f
+        allocs = @ballocated with_properties($t1, :int_val, :float_val) do i, f
             i + f
         end
         @test allocs == 0
@@ -212,11 +222,11 @@ function test_allocations()
     @testset "with_properties allocation - vector and matrix" begin
         set_property!(t1, :vector_val, [1, 2, 3])
         set_property!(t1, :matrix_val, [1.0 2.0; 3.0 4.0])
-        allocs = @eval @ballocated with_properties($t1, :vector_val, :matrix_val) do v, m
+        allocs = @ballocated with_properties($t1, :vector_val, :matrix_val) do v, m
             # v[1] + m[1, 1]
             v .= v .* 2
             m .= m .+ 10            
-        end evals = 1 samples = 1
+        end
         @info "with_properties (vector, matrix) allocations: $allocs"
         @test allocs == 0
     end

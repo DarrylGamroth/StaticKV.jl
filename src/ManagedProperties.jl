@@ -368,6 +368,51 @@ macro properties(struct_name, args...)
             propertynames(p)[1:end-1]
         end
 
+        # OPTIMIZATION: Generate property-specific methods for compile-time dispatch
+        # These methods eliminate the need for runtime property name validation
+        $(Expr(:block, [quote
+            @inline function get_property(p::$(struct_name), ::Val{$(QuoteNode(name))})
+                specs = getfield(p, $(QuoteNode(name)))
+                !AccessMode.is_readable(specs.access_flags) && throw(ErrorException("Property not readable"))
+                isnothing(specs.value) && throw(ErrorException("Property not set"))
+                specs.read_callback(p, $(QuoteNode(name)), specs.value)
+            end
+            
+            @inline function set_property!(p::$(struct_name), ::Val{$(QuoteNode(name))}, v)
+                specs = getfield(p, $(QuoteNode(name)))
+                !AccessMode.is_writable(specs.access_flags) && throw(ErrorException("Property not writable"))
+                specs.value = specs.write_callback(p, $(QuoteNode(name)), v)
+                specs.last_update = Clocks.time_nanos($(clock_access))
+                return specs.value
+            end
+            
+            @inline function is_set(p::$(struct_name), ::Val{$(QuoteNode(name))})
+                !isnothing(getfield(p, $(QuoteNode(name))).value)
+            end
+            
+            @inline function is_readable(p::$(struct_name), ::Val{$(QuoteNode(name))})
+                specs = getfield(p, $(QuoteNode(name)))
+                AccessMode.is_readable(specs.access_flags)
+            end
+            
+            @inline function is_writable(p::$(struct_name), ::Val{$(QuoteNode(name))})
+                specs = getfield(p, $(QuoteNode(name)))
+                AccessMode.is_writable(specs.access_flags)
+            end
+            
+            @inline function last_update(p::$(struct_name), ::Val{$(QuoteNode(name))})
+                getfield(p, $(QuoteNode(name))).last_update
+            end
+            
+            @inline function reset_property!(p::$(struct_name), ::Val{$(QuoteNode(name))})
+                specs = getfield(p, $(QuoteNode(name)))
+                !AccessMode.is_writable(specs.access_flags) && throw(ErrorException("Property not writable"))
+                specs.value = nothing
+                specs.last_update = -1
+                return nothing
+            end
+        end for name in prop_names]...))
+
         # Property access functions (allocation-free)
         """
             is_set(p, s::Symbol)
@@ -382,7 +427,17 @@ macro properties(struct_name, args...)
         - `true` if the property is set, `false` otherwise
         """
         @inline function is_set(p::$(struct_name), s::Symbol)
-            s in property_names(p) && !isnothing(getfield(p, s).value)
+            # Optimized compile-time dispatch - no tuple allocation
+            $(if length(prop_names) == 0
+                :(false)
+            else
+                # Generate optimized if-else chain for property dispatch
+                result = :(false)
+                for name in reverse(prop_names)
+                    result = :(s === $(QuoteNode(name)) ? is_set(p, Val($(QuoteNode(name)))) : $result)
+                end
+                result
+            end)
         end
 
         """
@@ -416,11 +471,17 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not readable, not set, or not found
         """
         @inline function get_property(p::$(struct_name), s::Symbol)
-            s in property_names(p) || throw(ErrorException("Property not found"))
-            specs = getfield(p, s)
-            !AccessMode.is_readable(specs.access_flags) && throw(ErrorException("Property not readable"))
-            isnothing(specs.value) && throw(ErrorException("Property not set"))
-            specs.read_callback(p, s, specs.value)
+            # Optimized compile-time dispatch - no tuple allocation
+            $(if length(prop_names) == 0
+                :(throw(ErrorException("Property not found")))
+            else
+                # Generate optimized if-else chain for property dispatch
+                result = :(throw(ErrorException("Property not found")))
+                for name in reverse(prop_names)
+                    result = :(s === $(QuoteNode(name)) ? get_property(p, Val($(QuoteNode(name)))) : $result)
+                end
+                result
+            end)
         end
 
         """
@@ -440,12 +501,17 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not writable or not found
         """
         @inline function set_property!(p::$(struct_name), s::Symbol, v)
-            s in property_names(p) || throw(ErrorException("Property not found"))
-            specs = getfield(p, s)
-            !AccessMode.is_writable(specs.access_flags) && throw(ErrorException("Property not writable"))
-            specs.value = specs.write_callback(p, s, v)
-            specs.last_update = Clocks.time_nanos($(clock_access))
-            return specs.value
+            # Optimized compile-time dispatch - no tuple allocation
+            $(if length(prop_names) == 0
+                :(throw(ErrorException("Property not found")))
+            else
+                # Generate optimized if-else chain for property dispatch
+                result = :(throw(ErrorException("Property not found")))
+                for name in reverse(prop_names)
+                    result = :(s === $(QuoteNode(name)) ? set_property!(p, Val($(QuoteNode(name))), v) : $result)
+                end
+                result
+            end)
         end
 
         """
@@ -498,9 +564,17 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not found
         """
         @inline function is_readable(p::$(struct_name), s::Symbol)
-            s in property_names(p) || throw(ErrorException("Property not found"))
-            specs = getfield(p, s)
-            AccessMode.is_readable(specs.access_flags)
+            # Optimized compile-time dispatch - no tuple allocation
+            $(if length(prop_names) == 0
+                :(throw(ErrorException("Property not found")))
+            else
+                # Generate optimized if-else chain for property dispatch
+                result = :(throw(ErrorException("Property not found")))
+                for name in reverse(prop_names)
+                    result = :(s === $(QuoteNode(name)) ? is_readable(p, Val($(QuoteNode(name)))) : $result)
+                end
+                result
+            end)
         end
 
         """
@@ -519,9 +593,17 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not found
         """
         @inline function is_writable(p::$(struct_name), s::Symbol)
-            s in property_names(p) || throw(ErrorException("Property not found"))
-            specs = getfield(p, s)
-            AccessMode.is_writable(specs.access_flags)
+            # Optimized compile-time dispatch - no tuple allocation
+            $(if length(prop_names) == 0
+                :(throw(ErrorException("Property not found")))
+            else
+                # Generate optimized if-else chain for property dispatch
+                result = :(throw(ErrorException("Property not found")))
+                for name in reverse(prop_names)
+                    result = :(s === $(QuoteNode(name)) ? is_writable(p, Val($(QuoteNode(name)))) : $result)
+                end
+                result
+            end)
         end
 
         """
@@ -540,8 +622,17 @@ macro properties(struct_name, args...)
         - `ErrorException` if the property is not found
         """
         @inline function last_update(p::$(struct_name), s::Symbol)
-            s in property_names(p) || throw(ErrorException("Property not found"))
-            getfield(p, s).last_update
+            # Optimized compile-time dispatch - no tuple allocation
+            $(if length(prop_names) == 0
+                :(throw(ErrorException("Property not found")))
+            else
+                # Generate optimized if-else chain for property dispatch
+                result = :(throw(ErrorException("Property not found")))
+                for name in reverse(prop_names)
+                    result = :(s === $(QuoteNode(name)) ? last_update(p, Val($(QuoteNode(name)))) : $result)
+                end
+                result
+            end)
         end
 
         """
@@ -689,12 +780,17 @@ macro properties(struct_name, args...)
         ```
         """
         @inline function reset_property!(p::$(struct_name), s::Symbol)
-            s in property_names(p) || throw(ErrorException("Property not found"))
-            specs = getfield(p, s)
-            !AccessMode.is_writable(specs.access_flags) && throw(ErrorException("Property not writable"))
-            specs.value = nothing
-            specs.last_update = -1
-            return nothing
+            # Optimized compile-time dispatch - no tuple allocation
+            $(if length(prop_names) == 0
+                :(throw(ErrorException("Property not found")))
+            else
+                # Generate optimized if-else chain for property dispatch
+                result = :(throw(ErrorException("Property not found")))
+                for name in reverse(prop_names)
+                    result = :(s === $(QuoteNode(name)) ? reset_property!(p, Val($(QuoteNode(name)))) : $result)
+                end
+                result
+            end)
         end
 
         # Add pretty printing support
