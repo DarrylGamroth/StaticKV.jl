@@ -1,6 +1,5 @@
 using ManagedProperties
 using Test
-using Clocks
 
 # Define the test type at the top level
 @properties TestBag begin

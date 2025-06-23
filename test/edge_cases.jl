@@ -1,4 +1,6 @@
 # Test edge cases for the ManagedProperties package
+using Test
+using ManagedProperties
 
 function test_edge_cases()
     # Use the pre-defined TestEdgeCases

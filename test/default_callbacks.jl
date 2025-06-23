@@ -1,7 +1,6 @@
 # Test custom defaults for read and write callbacks
 using Test
 using ManagedProperties
-using Clocks
 
 # Define custom default callbacks
 custom_read_cb(props, name, val) = "Custom Read: $val"
@@ -34,8 +33,8 @@ function test_default_callbacks()
     @test get_property(t, :age) == "Custom Read: 30"
 
     # Test that the custom default write callback is used
-    prop_meta = getfield(t, :name)
-    @test prop_meta.value == "ALICE"  # Should be uppercase due to write callback
+    raw_value = getfield(t, :name)
+    @test raw_value == "ALICE"  # Should be uppercase due to write callback
     
     # Create with regular defaults for comparison
     t2 = TestDefaultCallbacks()

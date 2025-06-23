@@ -1,6 +1,5 @@
 using ManagedProperties
 using Test
-using Clocks
 
 # Include test type definitions first
 include("basic_test_types.jl")
