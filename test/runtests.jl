@@ -15,6 +15,7 @@ include("allocation_tests.jl")
 include("default_callbacks.jl")
 include("property_bag_interface.jl")
 include("macro_expansion.jl")    # Test field generator macro expansion
+include("dot_syntax.jl")        # Test dot syntax property access
 
 # Run all tests
 @testset verbose=true "ManagedProperties.jl" begin
@@ -56,5 +57,9 @@ include("macro_expansion.jl")    # Test field generator macro expansion
     
     @testset "Macro Expansion" begin
         test_macro_expansion()
+    end
+    
+    @testset "Dot Syntax" begin
+        test_dot_syntax()
     end
 end

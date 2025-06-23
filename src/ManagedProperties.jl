@@ -951,6 +951,27 @@ macro properties(struct_name, args...)
         @inline function Base.haskey(p::$(struct_name), key::Symbol)
             key in property_names(p)
         end
+
+        # Override getproperty and setproperty! for natural dot syntax access
+        @inline function Base.getproperty(p::$(struct_name), name::Symbol)
+            # Check if it's a managed property first
+            if name in property_names(p)
+                return get_property(p, name)
+            else
+                # Fall back to default field access for internal fields (like clock)
+                return getfield(p, name)
+            end
+        end
+
+        @inline function Base.setproperty!(p::$(struct_name), name::Symbol, value)
+            # Check if it's a managed property first
+            if name in property_names(p)
+                return set_property!(p, name, value)
+            else
+                # Fall back to default field access for internal fields (like clock)
+                return setfield!(p, name, value)
+            end
+        end
     end
 
     # Combine everything
