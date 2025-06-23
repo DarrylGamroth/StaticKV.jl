@@ -8,11 +8,9 @@ This version creates concrete, non-parametric structs that are easy to use as fi
 
 # Key Features
 - **Direct field storage**: `Union{Nothing,T}` for values, `Int64` for timestamps
-- **Compile-time metadata**: Access control and callbacks stored at type level  
+- **Compile-time metadata**: Access control and callbacks stored at type level
 - **Zero overhead**: Default callbacks optimized away completely
-- **Concrete types**: No parametric complexity, easy to use as struct fields
 - **Type-stable**: All operations fully optimized by Julia compiler
-- **Memory efficient**: Minimal overhead, excellent cache locality
 
 # Example
 ```julia
@@ -33,8 +31,8 @@ println(get_property(person, :name))  # "Alice"
 
 # Can be used as concrete field types
 struct Company
-    ceo::Person          # ✅ Concrete type, no parameters
-    employees::Vector{Person}  # ✅ Works in collections
+    ceo::Person{Clocks.EpochClock} 
+    employees::Vector{Person{Clocks.EpochClock}}
 end
 ```
 """
@@ -58,7 +56,7 @@ Module containing access control constants for property access.
 
 # Constants
 - `NONE`: No access (0x00)
-- `READABLE`: Property can be read (0x01)  
+- `READABLE`: Property can be read (0x01)
 - `WRITABLE`: Property can be written (0x02)
 - `READABLE_WRITABLE`: Property can be both read and written (0x03)
 """
@@ -247,14 +245,14 @@ macro properties(struct_name, args...)
     default_read_callback = nothing
     default_write_callback = nothing
     clock_type = :(Clocks.EpochClock)  # Default to EpochClock
-    
+
     # Handle struct-level parameters (everything except the last block)
     for i in 1:(length(args)-1)
         arg = args[i]
         if arg isa Expr && arg.head == :(=)
             param_name = arg.args[1]
             param_value = arg.args[2]
-            
+
             if param_name == :default_read_callback
                 default_read_callback = param_value
             elseif param_name == :default_write_callback
@@ -291,17 +289,17 @@ macro properties(struct_name, args...)
 
     # Generate the struct with direct field storage
     struct_fields = []
-    
+
     # Add value fields
     for (name, type) in zip(prop_names, prop_types)
         push!(struct_fields, :($(name)::Union{Nothing,$(type)}))
     end
-    
+
     # Add timestamp fields
     for name in prop_names
         push!(struct_fields, :($(Symbol(name, :_timestamp))::Int64))
     end
-    
+
     # Add clock field (using gensym to avoid conflicts) - parametric for zero overhead
     push!(struct_fields, :($(clock_field)::C))
 
@@ -309,7 +307,7 @@ macro properties(struct_name, args...)
     struct_def = quote
         mutable struct $(struct_name){C <: Clocks.AbstractClock}
             $(struct_fields...)
-            
+
             # Constructor with better default value handling
             function $(struct_name)(clock::C = $(clock_type)()) where {C <: Clocks.AbstractClock}
                 # Initialize values (use defaults if provided, nothing otherwise)
@@ -317,15 +315,15 @@ macro properties(struct_name, args...)
                 new{C}(
                     # Value fields
                     $([:($(isnothing(prop_values[i]) ? :(nothing) : prop_values[i])) for i in 1:length(props)]...),
-                    
-                    # Timestamp fields  
+
+                    # Timestamp fields
                     $([:($(isnothing(prop_values[i]) ? :(-1) : :(Clocks.time_nanos(clock)))) for i in 1:length(props)]...),
-                    
+
                     # Clock
                     clock
                 )
             end
-            
+
             # Convenience constructor with default clock type
             function $(struct_name)()
                 $(struct_name)($(clock_type)())
@@ -335,94 +333,94 @@ macro properties(struct_name, args...)
 
     # Generate compile-time metadata functions for each property (improved naming from DirectFields)
     metadata_functions = []
-    
+
     for (i, name) in enumerate(prop_names)
         # Access control functions (using private naming to avoid conflicts)
         push!(metadata_functions, quote
-            @inline _is_readable(::Type{$(struct_name)}, ::Val{$(QuoteNode(name))}) = 
+            @inline _is_readable(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) =
                 ManagedProperties.AccessMode.is_readable($(prop_access[i]))
-            @inline _is_writable(::Type{$(struct_name)}, ::Val{$(QuoteNode(name))}) = 
+            @inline _is_writable(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) =
                 ManagedProperties.AccessMode.is_writable($(prop_access[i]))
         end)
-        
+
         # Callback functions (improved scoping)
         read_cb = if isnothing(prop_read_cbs[i])
             isnothing(default_read_callback) ? :(ManagedProperties._direct_default_callback) : default_read_callback
         else
             prop_read_cbs[i]
         end
-        
+
         write_cb = if isnothing(prop_write_cbs[i])
             isnothing(default_write_callback) ? :(ManagedProperties._direct_default_callback) : default_write_callback
         else
             prop_write_cbs[i]
         end
-        
+
         push!(metadata_functions, quote
-            @inline _get_read_callback(::Type{$(struct_name)}, ::Val{$(QuoteNode(name))}) = $(read_cb)
-            @inline _get_write_callback(::Type{$(struct_name)}, ::Val{$(QuoteNode(name))}) = $(write_cb)
+            @inline _get_read_callback(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) = $(read_cb)
+            @inline _get_write_callback(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) = $(write_cb)
         end)
     end
 
     # Generate property-specific accessor methods
     property_methods = []
-    
+
     for (i, name) in enumerate(prop_names)
         timestamp_field = Symbol(name, :_timestamp)
-        
+
         push!(property_methods, quote
             # Property-specific get_property method (improved from DirectFields)
             @inline function get_property(p::$(struct_name), ::Val{$(QuoteNode(name))})
                 # Compile-time access check
-                _is_readable($(struct_name), Val($(QuoteNode(name)))) || 
+                _is_readable($(struct_name), Val($(QuoteNode(name)))) ||
                     throw(ErrorException("Property not readable"))
-                
+
                 # Direct field access
                 value = getfield(p, $(QuoteNode(name)))
                 isnothing(value) && throw(ErrorException("Property not set"))
-                
+
                 # Compile-time callback (optimized away for defaults)
                 callback = _get_read_callback($(struct_name), Val($(QuoteNode(name))))
                 return callback(p, $(QuoteNode(name)), value)
             end
-            
+
             # Property-specific set_property! method (improved clock access)
             @inline function set_property!(p::$(struct_name), ::Val{$(QuoteNode(name))}, v)
                 # Compile-time access check
-                _is_writable($(struct_name), Val($(QuoteNode(name)))) || 
+                _is_writable($(struct_name), Val($(QuoteNode(name)))) ||
                     throw(ErrorException("Property not writable"))
-                
+
                 # Compile-time callback (optimized away for defaults)
                 callback = _get_write_callback($(struct_name), Val($(QuoteNode(name))))
                 transformed_value = callback(p, $(QuoteNode(name)), v)
-                
+
                 # Direct field updates (improved clock field access)
                 setfield!(p, $(QuoteNode(name)), transformed_value)
                 setfield!(p, $(QuoteNode(timestamp_field)), Clocks.time_nanos(getfield(p, $(QuoteNode(clock_field)))))
-                
+
                 return transformed_value
             end
-            
+
             # Property-specific helper methods
             @inline function is_set(p::$(struct_name), ::Val{$(QuoteNode(name))})
                 !isnothing(getfield(p, $(QuoteNode(name))))
             end
-            
+
             # Public access control methods (delegate to private ones)
             @inline function is_readable(p::$(struct_name), ::Val{$(QuoteNode(name))})
                 _is_readable($(struct_name), Val($(QuoteNode(name))))
             end
-            
+
             @inline function is_writable(p::$(struct_name), ::Val{$(QuoteNode(name))})
                 _is_writable($(struct_name), Val($(QuoteNode(name))))
             end
-            
+
             @inline function last_update(p::$(struct_name), ::Val{$(QuoteNode(name))})
                 getfield(p, $(QuoteNode(timestamp_field)))
             end
-            
+
             @inline function reset_property!(p::$(struct_name), ::Val{$(QuoteNode(name))})
-                _is_writable($(struct_name), Val($(QuoteNode(name)))) || 
+                _is_writable($(struct_name), Val($(QuoteNode(name)))) ||
                     throw(ErrorException("Property not writable"))
                 setfield!(p, $(QuoteNode(name)), nothing)
                 setfield!(p, $(QuoteNode(timestamp_field)), -1)
@@ -524,7 +522,7 @@ macro properties(struct_name, args...)
         end
 
         # Additional utility functions (from DirectFields version)
-        @inline function property_type(::Type{$(struct_name)}, s::Symbol)
+        @inline function property_type(::Type{<:$(struct_name)}, s::Symbol)
             $(if length(prop_names) == 0
                 :(nothing)
             else
@@ -536,9 +534,9 @@ macro properties(struct_name, args...)
                 result
             end)
         end
-        
+
         @inline property_type(p::$(struct_name), s::Symbol) = property_type(typeof(p), s)
-        
+
         @inline function all_properties_set(p::$(struct_name))
             $(if length(prop_names) == 0
                 :(true)
@@ -554,69 +552,69 @@ macro properties(struct_name, args...)
         # Improved pretty printing with better padding and formatting
         function Base.show(io::IO, ::MIME"text/plain", p::$(struct_name))
             println(io, "$($(QuoteNode(struct_name))) with properties:")
-            
+
             names = property_names(p)
             if isempty(names)
                 println(io, "  (no properties defined)")
                 return
             end
-            
+
             # Calculate padding widths for aligned columns
             max_name_len = maximum(length(string(name)) for name in names)
             max_type_len = 0
             max_value_len = 0
             max_access_len = 4  # "[RW]" is 4 characters
-            
+
             # Pre-calculate all strings to determine max widths
             name_strs = String[]
             type_strs = String[]
             value_strs = String[]
             access_strs = String[]
             time_strs = String[]
-            
+
             for name in names
                 value = getfield(p, name)
                 timestamp = getfield(p, Symbol(name, :_timestamp))
-                
+
                 # Type info
                 prop_type = property_type(p, name)
                 type_str = prop_type === nothing ? "Any" : string(prop_type)
-                
+
                 # Access info
                 readable = is_readable(p, name)
                 writable = is_writable(p, name)
                 access_str = "[" * (readable ? "R" : "-") * (writable ? "W" : "-") * "]"
-                
+
                 # Value info
                 value_str = isnothing(value) ? "nothing" : repr(value)
                 time_str = timestamp == -1 ? "never" : "$(timestamp) ns"
-                
+
                 # Truncate very long values for better display
                 if length(value_str) > 35
                     value_str = value_str[1:32] * "..."
                 end
-                
+
                 push!(name_strs, string(name))
                 push!(type_strs, type_str)
                 push!(value_strs, value_str)
                 push!(access_strs, access_str)
                 push!(time_strs, time_str)
-                
+
                 max_type_len = max(max_type_len, length(type_str))
                 max_value_len = max(max_value_len, length(value_str))
             end
-            
+
             # Print each property with aligned columns
             for i in 1:length(names)
                 name_padded = rpad(name_strs[i], max_name_len)
                 type_padded = rpad("::$(type_strs[i])", max_type_len + 2)  # +2 for "::" prefix
                 value_padded = rpad(value_strs[i], max_value_len)
                 access_padded = rpad(access_strs[i], max_access_len)
-                
+
                 println(io, "  $(name_padded) $(type_padded) = $(value_padded) $(access_padded) (last update: $(time_strs[i]))")
             end
         end
-        
+
         function Base.show(io::IO, p::$(struct_name))
             set_count = count(name -> is_set(p, name), property_names(p))
             total = length(property_names(p))
@@ -633,7 +631,7 @@ macro properties(struct_name, args...)
             end
             f(get_property(p, s))
         end
-        
+
         @inline function with_property!(f::Function, p::$(struct_name), s::Symbol)
             if !is_set(p, s)
                 throw(ErrorException("Property :$s is not set"))
@@ -644,23 +642,23 @@ macro properties(struct_name, args...)
             if !is_writable(p, s)
                 throw(ErrorException("Property :$s is not writable"))
             end
-            
+
             # Check if property type is isbits - if so, should throw error
             prop_type = property_type(p, s)
             if prop_type !== nothing && isbitstype(prop_type)
                 throw(ErrorException("Cannot mutate isbits property :$s in place"))
             end
-            
+
             # Get the current value and call the function
             current_value = get_property(p, s)
             result = f(current_value)
-            
+
             # For in-place mutations, we don't reassign the property value.
             # The function should modify the object directly and we just return the result.
             # If the user wants to set a new value, they should use set_property! explicitly.
             result
         end
-        
+
         @inline function with_properties(f::Function, p::$(struct_name), properties::Symbol...)
             @inline function val_generator(i)
                 prop = properties[i]
@@ -672,7 +670,7 @@ macro properties(struct_name, args...)
                 end
                 get_property(p, prop)
             end
-            
+
             if length(properties) == 0
                 return f()
             elseif length(properties) == 1
@@ -696,15 +694,15 @@ macro properties(struct_name, args...)
         @inline function Base.getindex(p::$(struct_name), key::Symbol)
             get_property(p, key)
         end
-        
+
         @inline function Base.getindex(p::$(struct_name), keys::Symbol...)
             tuple((get_property(p, key) for key in keys)...)
         end
-        
+
         @inline function Base.setindex!(p::$(struct_name), value, key::Symbol)
             set_property!(p, key, value)
         end
-        
+
         @inline function Base.setindex!(p::$(struct_name), values, keys::Symbol...)
             if length(values) != length(keys)
                 throw(ArgumentError("Number of values (\$(length(values))) must match number of keys (\$(length(keys)))"))
@@ -714,10 +712,11 @@ macro properties(struct_name, args...)
             end
             values
         end
-        
+
         @inline function Base.values(p::$(struct_name))
-            # Only include values for properties that are set and readable
-            readable_set_values = []
+            # Note: This operation may allocate due to dynamic filtering
+            # Property bag interface operations are less performance-critical than direct property access
+            readable_set_values = Any[]
             for name in property_names(p)
                 if is_set(p, name) && is_readable(p, name)
                     push!(readable_set_values, get_property(p, name))
@@ -725,33 +724,23 @@ macro properties(struct_name, args...)
             end
             tuple(readable_set_values...)
         end
-        
+
         @inline function Base.pairs(p::$(struct_name))
             # Only include pairs for properties that are set and readable
-            readable_set_pairs = []
-            for name in property_names(p)
-                if is_set(p, name) && is_readable(p, name)
-                    push!(readable_set_pairs, (name, get_property(p, name)))
-                end
-            end
-            readable_set_pairs
+            # Use tuple comprehension to avoid allocations
+            tuple(((name, get_property(p, name)) for name in property_names(p) if is_set(p, name) && is_readable(p, name))...)
         end
-        
+
         @inline function Base.iterate(p::$(struct_name))
-            # Get all readable, set properties
-            readable_set_props = []
-            for name in property_names(p)
-                if is_set(p, name) && is_readable(p, name)
-                    push!(readable_set_props, (name, get_property(p, name)))
-                end
-            end
-            
+            # Get all readable, set properties as a tuple to avoid allocations
+            readable_set_props = tuple(((name, get_property(p, name)) for name in property_names(p) if is_set(p, name) && is_readable(p, name))...)
+
             if isempty(readable_set_props)
                 return nothing
             end
             return (readable_set_props[1], (readable_set_props, 2))
         end
-        
+
         @inline function Base.iterate(p::$(struct_name), state)
             readable_set_props, index = state
             if index > length(readable_set_props)
@@ -759,7 +748,7 @@ macro properties(struct_name, args...)
             end
             return (readable_set_props[index], (readable_set_props, index + 1))
         end
-        
+
         @inline function Base.length(p::$(struct_name))
             # Count only properties that are set
             count = 0
@@ -770,7 +759,7 @@ macro properties(struct_name, args...)
             end
             count
         end
-        
+
         @inline function Base.get(p::$(struct_name), key::Symbol, default)
             if is_set(p, key) && is_readable(p, key)
                 get_property(p, key)
@@ -778,19 +767,19 @@ macro properties(struct_name, args...)
                 default
             end
         end
-        
+
         @inline function Base.isreadable(p::$(struct_name), key::Symbol)
             is_readable(p, key)
         end
-        
+
         @inline function Base.iswritable(p::$(struct_name), key::Symbol)
             is_writable(p, key)
         end
-        
+
         @inline function Base.keys(p::$(struct_name))
             property_names(p)
         end
-        
+
         @inline function Base.haskey(p::$(struct_name), key::Symbol)
             key in property_names(p)
         end

@@ -1,7 +1,7 @@
 name = "ManagedProperties"
 uuid = "5c25fbc6-c823-4e8d-82ee-a726f35d2972"
 authors = ["Darryl Gamroth <dgamroth@rubus.ca>"]
-version = "0.2.2"
+version = "0.3.0"
 
 [deps]
 Clocks = "6b5ade5d-6e95-4584-b343-73eec2e8782b"
@@ -10,7 +10,8 @@ Clocks = "6b5ade5d-6e95-4584-b343-73eec2e8782b"
 Clocks = "0.2"
 
 [extras]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Test", "BenchmarkTools"]
