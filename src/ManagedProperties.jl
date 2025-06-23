@@ -11,6 +11,7 @@ This version creates concrete, non-parametric structs that are easy to use as fi
 - **Compile-time metadata**: Access control and callbacks stored at type level
 - **Zero overhead**: Default callbacks optimized away completely
 - **Type-stable**: All operations fully optimized by Julia compiler
+- **Macro expansion**: Support for field generator macros in property blocks
 
 # Example
 ```julia
@@ -31,13 +32,14 @@ println(get_property(person, :name))  # "Alice"
 
 # Can be used as concrete field types
 struct Company
-    ceo::Person{Clocks.EpochClock} 
+    ceo::Person{Clocks.EpochClock}
     employees::Vector{Person{Clocks.EpochClock}}
 end
 ```
 """
 
 using Clocks
+using MacroTools
 
 # Export public API
 export @properties, AccessMode
@@ -48,7 +50,6 @@ export is_readable, is_writable, last_update
 export property_names
 export Clocks
 
-# Access mode constants (improved from DirectFields version)
 """
     AccessMode
 
@@ -102,8 +103,17 @@ function process_attribute!(result, key, value)
     end
 end
 
-# Parse property definition
+"""
+    parse_property_def(expr)
+
+Parse a property definition expression into a dictionary containing the property's
+name, type, default value, access mode, and callbacks.
+
+Uses MacroTools for AST manipulation and simple pattern analysis.
+"""
 function parse_property_def(expr)
+    # Property definition parser
+
     result = Dict{Symbol,Any}()
 
     # Initialize with defaults
@@ -120,12 +130,30 @@ function parse_property_def(expr)
         return false
     end
 
-    # Handle simple type annotation: name::Type
-    if expr.head == :(::)
-        result[:name] = expr.args[1]
-        result[:type] = expr.args[2]
+    # Make sure expr is an Expr
+    if !(expr isa Expr)
+        throw(ErrorException("Expected property definition, got: $(typeof(expr))"))
+    end
 
-        # Check if the type is a Union
+    # Ensure expr is fully cleaned by stripping any module qualifications
+    clean_expr = strip_module_qualifications(expr)
+
+    # Handle simple type annotation: name::Type
+    if clean_expr.head == :(::)
+        name_expr = clean_expr.args[1]
+        type_expr = clean_expr.args[2]
+
+        # Extract the name (must be a symbol)
+        if name_expr isa Symbol
+            result[:name] = name_expr
+        else
+            throw(ErrorException("Property name must be a symbol, got: $(typeof(name_expr))"))
+        end
+
+        # Extract the type
+        result[:type] = type_expr
+
+        # Check for Union types
         if is_union_type(result[:type])
             throw(ErrorException("Union types are not allowed in property definitions as they conflict with the internal representation of unset properties"))
         end
@@ -134,46 +162,79 @@ function parse_property_def(expr)
     end
 
     # Handle pair syntax: name::Type => (attributes...)
-    if expr.head == :call && expr.args[1] == :(=>)
-        type_expr = expr.args[2]
-        if type_expr.head != :(::)
-            throw(ErrorException("Expected name::type on left side of =>"))
+    if clean_expr.head == :call && length(clean_expr.args) >= 3 && clean_expr.args[1] == :(=>)
+        type_expr = clean_expr.args[2]
+        attrs_expr = clean_expr.args[3]
+
+        if !(type_expr isa Expr) || type_expr.head != :(::)
+            throw(ErrorException("Expected name::type on left side of =>, got: $type_expr"))
         end
 
-        result[:name] = type_expr.args[1]
-        result[:type] = type_expr.args[2]
+        # Extract name and type
+        name_expr = type_expr.args[1]
+        type_value = type_expr.args[2]
 
-        # Check if the type is a Union
+        # Name must be a symbol
+        if name_expr isa Symbol
+            result[:name] = name_expr
+        else
+            throw(ErrorException("Property name must be a symbol, got: $(typeof(name_expr))"))
+        end
+
+        # Extract the type
+        result[:type] = type_value
+
+        # Check for Union types
         if is_union_type(result[:type])
             throw(ErrorException("Union types are not allowed in property definitions as they conflict with the internal representation of unset properties"))
         end
 
-        attrs = expr.args[3]
+        # Parse attributes
+        if attrs_expr isa Expr
+            if attrs_expr.head == :call && length(attrs_expr.args) >= 3 && attrs_expr.args[1] == :(=>)
+                # Single key-value attribute
+                key = attrs_expr.args[2]
+                value = attrs_expr.args[3]
 
-        # Handle single attribute
-        if attrs.head == :call && attrs.args[1] == :(=>)
-            key = attrs.args[2]
-            value = attrs.args[3]
-            process_attribute!(result, key, value)
-        # Handle multiple attributes
-        elseif attrs.head == :tuple
-            for attr in attrs.args
-                if attr.head == :call && attr.args[1] == :(=>)
-                    key = attr.args[2]
-                    value = attr.args[3]
+                # Key must be a symbol or convertible to one
+                if key isa Symbol
                     process_attribute!(result, key, value)
                 else
-                    throw(ErrorException("Expected key => value pair in attributes"))
+                    throw(ErrorException("Attribute key must be a symbol, got: $(typeof(key))"))
                 end
+            elseif attrs_expr.head == :tuple
+                # Multiple attributes in a tuple
+                for attr in attrs_expr.args
+                    if attr isa LineNumberNode
+                        continue
+                    end
+
+                    if attr isa Expr && attr.head == :call && length(attr.args) >= 3 && attr.args[1] == :(=>)
+                        key = attr.args[2]
+                        value = attr.args[3]
+
+                        # Key must be a symbol or convertible to one
+                        if key isa Symbol
+                            process_attribute!(result, key, value)
+                        else
+                            throw(ErrorException("Attribute key must be a symbol, got: $(typeof(key))"))
+                        end
+                    else
+                        throw(ErrorException("Expected key => value pair in attributes, got: $attr"))
+                    end
+                end
+            else
+                throw(ErrorException("Expected attributes as tuple or pair, got: $attrs_expr"))
             end
         else
-            throw(ErrorException("Expected attributes as tuple or pair"))
+            throw(ErrorException("Expected attributes expression, got: $(typeof(attrs_expr))"))
         end
 
         return result
     end
 
-    throw(ErrorException("Expected property definition"))
+    # If we reach here, the expression didn't match any of our expected patterns
+    throw(ErrorException("Expected property definition (name::Type or name::Type => attrs), got expression with head: $(clean_expr.head)"))
 end
 
 """
@@ -228,6 +289,15 @@ end
 @properties Person default_read_callback=my_read_fn default_write_callback=my_write_fn begin
     name::String
 end
+
+# Using field generator macros
+@properties Config begin
+    name::String
+
+    # Field generator macros are expanded during compilation
+    @generate_timestamp_fields
+    @generate_counter_fields request response
+end
 ```
 """
 macro properties(struct_name, args...)
@@ -267,13 +337,111 @@ macro properties(struct_name, args...)
         end
     end
 
-    # Extract property definitions
-    property_defs = filter(x -> x isa Expr && !(x isa LineNumberNode), block.args)
+    # Extract property definitions and expand any macros
+    # This includes support for field generator macros like @generate_data_uri_fields
+    property_defs = []
+
+    # Process the block to handle macros and filter out non-expressions
+    for expr in block.args
+        if expr isa LineNumberNode
+            continue  # Skip line number nodes
+        elseif expr isa Expr
+            if expr.head == :macrocall
+                # Expand macros - try different module scopes for robust expansion
+                local expanded
+                success = false
+
+                try
+                    # First try to expand in caller's module
+                    expanded = macroexpand(__module__, expr)
+                    success = true
+                catch e1
+                    try
+                        # Then try Main module
+                        expanded = macroexpand(Main, expr)
+                        success = true
+                    catch e2
+                        try
+                            # Try current module
+                            expanded = macroexpand(ManagedProperties, expr)
+                            success = true
+                        catch e3
+                            # Nothing worked, report error
+                            error("Failed to expand macro $(expr)")
+                        end
+                    end
+                end
+
+                if success
+                    # Process the expanded result
+                    if expanded isa Expr
+                        if expanded.head == :block
+                            # Handle block of expressions
+                            for sub_expr in expanded.args
+                                if !(sub_expr isa LineNumberNode) && sub_expr isa Expr
+                                    # Strip module qualifications
+                                    clean_expr = strip_module_qualifications(sub_expr)
+                                    push!(property_defs, clean_expr)
+                                end
+                            end
+                        else
+                            # Single expression expansion
+                            clean_expr = strip_module_qualifications(expanded)
+                            push!(property_defs, clean_expr)
+                        end
+                    end
+                end
+            else
+                # Regular property definition
+                push!(property_defs, expr)
+            end
+        end
+    end
 
     # Parse property definitions
     props = []
-    for def in property_defs
-        push!(props, parse_property_def(def))
+    for (index, def) in enumerate(property_defs)
+        try
+            # Check for module qualified names that need stripping
+            if def isa Expr
+                # Apply proper module qualification stripping
+                def = strip_module_qualifications(def)
+            end
+
+            # Parse the property definition
+            parsed_prop = parse_property_def(def)
+
+            push!(props, parsed_prop)
+        catch e
+            # Simplify error messages
+            if def isa Expr && def.head == :call && length(def.args) >= 3 && def.args[1] == :(=>)
+                try
+                    # Try to extract key components directly
+                    type_expr = def.args[2]
+                    attrs = def.args[3]
+
+                    if type_expr isa Expr && type_expr.head == :(::)
+                        name = strip_module_qualifications(type_expr.args[1])
+                        type = strip_module_qualifications(type_expr.args[2])
+
+                        # Create a clean definition and retry
+                        clean_def = Expr(:(=>),
+                            Expr(:(::), name isa Symbol ? name : :invalid_name,
+                                 type isa Symbol || type isa Expr ? type : :Any),
+                            strip_module_qualifications(attrs))
+
+                        parsed_prop = parse_property_def(clean_def)
+                        push!(props, parsed_prop)
+                        continue
+                    end
+                catch
+                    # If recovery fails, just report the original error
+                    error("Failed to parse property definition: $(def)")
+                end
+            else
+                error("Failed to parse property definition: $(def)")
+            end
+        end
     end
 
     # Extract property information
@@ -795,5 +963,64 @@ macro properties(struct_name, args...)
 
     return esc(result)
 end
+
+"""
+    strip_module_qualifications(expr)
+
+Remove module qualifications from symbols and expressions.
+This is particularly useful for handling expressions generated by macros
+where module qualifications are automatically inserted by Julia's macro system.
+
+Uses MacroTools.postwalk for robust AST traversal and transformation.
+"""
+function strip_module_qualifications(expr)
+    # Use MacroTools.postwalk which recursively walks the expression tree
+    # and applies the transformation to each node
+    MacroTools.postwalk(expr) do x
+        # Handle GlobalRef (Main.:(=>))
+        if x isa GlobalRef
+            if x.mod == Main
+                return x.name
+            else
+                # Keep module qualifications for non-Main modules
+                # This is important for AccessMode constants
+                return x
+            end
+        # Handle module qualification expressions (Main.Symbol)
+        elseif x isa Expr && x.head == :(.)
+            if length(x.args) == 2
+                # Only strip Main module qualifications, preserve others like AccessMode
+                if x.args[1] == :Main && x.args[2] isa QuoteNode
+                    return x.args[2].value
+                # Handle special cases involving operators and other symbols from Main
+                elseif x.args[1] == :Main && x.args[2] isa Expr && x.args[2].head == :quote
+                    return x.args[2].args[1]
+                else
+                    # Keep other module qualifications like AccessMode.READABLE
+                    return x
+                end
+            end
+        # Handle quoted expressions within module qualifications
+        elseif x isa Expr && x.head == :quote
+            # Don't transform the content of quoted expressions
+            return x
+        # Handle string literals specially
+        elseif x isa Expr && x.head == :string
+            # Don't transform string literals
+            return x
+        # Handle macro calls, only strip module from the macro name
+        elseif x isa Expr && x.head == :macrocall
+            if length(x.args) >= 1
+                # Only strip from the macro name (first arg) but preserve the rest
+                return Expr(:macrocall,
+                           strip_module_qualifications(x.args[1]),
+                           x.args[2:end]...)
+            end
+        end
+        # Default: return node unchanged
+        return x
+    end
+end
+
 
 end # module

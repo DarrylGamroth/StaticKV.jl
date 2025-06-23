@@ -14,6 +14,7 @@ include("anonymous_callbacks.jl")
 include("allocation_tests.jl")
 include("default_callbacks.jl")
 include("property_bag_interface.jl")
+include("macro_expansion.jl")    # Test field generator macro expansion
 
 # Run all tests
 @testset verbose=true "ManagedProperties.jl" begin
@@ -51,5 +52,9 @@ include("property_bag_interface.jl")
     
     @testset "Allocation Tests" begin
         test_allocations()
+    end
+    
+    @testset "Macro Expansion" begin
+        test_macro_expansion()
     end
 end

@@ -1,13 +1,15 @@
 name = "ManagedProperties"
 uuid = "5c25fbc6-c823-4e8d-82ee-a726f35d2972"
 authors = ["Darryl Gamroth <dgamroth@rubus.ca>"]
-version = "0.3.0"
+version = "0.3.1"
 
 [deps]
 Clocks = "6b5ade5d-6e95-4584-b343-73eec2e8782b"
+MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 
 [compat]
 Clocks = "0.2"
+MacroTools = "0.5.16"
 
 [extras]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
