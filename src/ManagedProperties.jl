@@ -463,9 +463,9 @@ macro properties(struct_name, args...)
         push!(struct_fields, :($(name)::Union{Nothing,$(type)}))
     end
 
-    # Add timestamp fields
+    # Add timestamp fields (with underscore prefix to avoid collisions)
     for name in prop_names
-        push!(struct_fields, :($(Symbol(name, :_timestamp))::Int64))
+        push!(struct_fields, :($(Symbol(:_, name, :_timestamp))::Int64))
     end
 
     # Add clock field (using gensym to avoid conflicts) - parametric for zero overhead
@@ -499,7 +499,7 @@ macro properties(struct_name, args...)
         end
     end
 
-    # Generate compile-time metadata functions for each property (improved naming from DirectFields)
+    # Generate compile-time metadata functions for each property
     metadata_functions = []
 
     for (i, name) in enumerate(prop_names)
@@ -534,7 +534,7 @@ macro properties(struct_name, args...)
     property_methods = []
 
     for (i, name) in enumerate(prop_names)
-        timestamp_field = Symbol(name, :_timestamp)
+        timestamp_field = Symbol(:_, name, :_timestamp)
 
         push!(property_methods, quote
             # Property-specific get_property method (improved from DirectFields)
@@ -742,7 +742,7 @@ macro properties(struct_name, args...)
 
             for name in names
                 value = getfield(p, name)
-                timestamp = getfield(p, Symbol(name, :_timestamp))
+                timestamp = getfield(p, Symbol(:_, name, :_timestamp))
 
                 # Type info
                 prop_type = property_type(p, name)
