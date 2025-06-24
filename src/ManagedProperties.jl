@@ -491,11 +491,6 @@ macro properties(struct_name, args...)
                     clock
                 )
             end
-
-            # Convenience constructor with default clock type
-            function $(struct_name)()
-                $(struct_name)($(clock_type)())
-            end
         end
     end
 
