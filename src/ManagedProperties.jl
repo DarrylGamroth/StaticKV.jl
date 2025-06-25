@@ -476,20 +476,38 @@ macro properties(struct_name, args...)
         mutable struct $(struct_name){C <: Clocks.AbstractClock}
             $(struct_fields...)
 
-            # Constructor with better default value handling
+            # Constructor with proper default value handling (bypasses access control during construction)
             function $(struct_name)(clock::C = $(clock_type)()) where {C <: Clocks.AbstractClock}
-                # Initialize values (use defaults if provided, nothing otherwise)
-                # Initialize timestamps (current time if default value, -1 otherwise)
-                new{C}(
-                    # Value fields
-                    $([:($(isnothing(prop_values[i]) ? :(nothing) : prop_values[i])) for i in 1:length(props)]...),
+                # Create instance with unset properties
+                instance = new{C}(
+                    # Value fields - all start as nothing
+                    $([:(nothing) for i in 1:length(props)]...),
 
-                    # Timestamp fields
-                    $([:($(isnothing(prop_values[i]) ? :(-1) : :(Clocks.time_nanos(clock)))) for i in 1:length(props)]...),
+                    # Timestamp fields - all start as -1 (unset)
+                    $([:(-1) for i in 1:length(props)]...),
 
                     # Clock
                     clock
                 )
+
+                # Set default values directly (bypassing access control during construction)
+                $([if !isnothing(prop_values[i])
+                    quote
+                        # Get the callback for this property
+                        callback = _get_on_set($(struct_name), Val($(QuoteNode(prop_names[i]))))
+
+                        # Transform the default value through the callback
+                        transformed_value = callback(instance, $(QuoteNode(prop_names[i])), $(prop_values[i]))
+
+                        # Set the field directly (bypassing access checks since this is construction)
+                        setfield!(instance, $(QuoteNode(prop_names[i])), transformed_value)
+                        setfield!(instance, $(QuoteNode(Symbol(:_, prop_names[i], :_timestamp))), Clocks.time_nanos(clock))
+                    end
+                else
+                    :()  # Empty expression for properties without defaults
+                end for i in 1:length(props)]...)
+
+                return instance
             end
         end
     end
