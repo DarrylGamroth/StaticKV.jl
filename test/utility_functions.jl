@@ -109,7 +109,7 @@ function test_utility_functions()
 
         # Test with_property example
         result = with_property(a, :name) do name
-            name * " Doe"  # Note: name is already uppercase due to read callback
+            name * " Doe"  # Note: name is already uppercase due to get callback
         end
         @test result == "JOHN Doe"  # Only "JOHN" is uppercase
         @test get_property(a, :name) == "JOHN"  # Original value unchanged

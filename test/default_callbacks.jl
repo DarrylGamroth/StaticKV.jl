@@ -1,14 +1,14 @@
-# Test custom defaults for read and write callbacks
+# Test custom defaults for read and set callbacks
 using Test
 using ManagedProperties
 
 # Define custom default callbacks
-custom_read_cb(props, name, val) = "Custom Read: $val"
-custom_write_cb(props, name, val::String) = uppercase(val)
-custom_write_cb(props, name, val::Number) = val  # Pass through for numbers
+custom_get_cb(props, name, val) = "Custom Get: $val"
+custom_set_cb(props, name, val::String) = uppercase(val)
+custom_set_cb(props, name, val::Number) = val  # Pass through for numbers
 
 # Create a simple structure with default properties
-@properties TestCustomDefaultCallbacks default_read_callback=custom_read_cb default_write_callback=custom_write_cb begin
+@properties TestCustomDefaultCallbacks default_on_get=custom_get_cb default_on_set=custom_set_cb begin
     name::String
     age::Int
 end
@@ -28,13 +28,13 @@ function test_default_callbacks()
     set_property!(t, :name, "Alice")
     set_property!(t, :age, 30)
 
-    # Test that the custom default read callback is used
-    @test get_property(t, :name) == "Custom Read: ALICE"
-    @test get_property(t, :age) == "Custom Read: 30"
+    # Test that the custom default get callback is used
+    @test get_property(t, :name) == "Custom Get: ALICE"
+    @test get_property(t, :age) == "Custom Get: 30"
 
-    # Test that the custom default write callback is used
+    # Test that the custom default set callback is used
     raw_value = getfield(t, :name)
-    @test raw_value == "ALICE"  # Should be uppercase due to write callback
+    @test raw_value == "ALICE"  # Should be uppercase due to set callback
     
     # Create with regular defaults for comparison
     t2 = TestDefaultCallbacks()

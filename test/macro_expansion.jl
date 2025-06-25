@@ -74,12 +74,12 @@ macro generate_secured_fields()
         
         password::String => (
             access => AccessMode.READABLE_WRITABLE,
-            read_callback => (obj, prop, val) -> "********"
+            on_get => (obj, prop, val) -> "********"
         )
         
         email::String => (
             access => AccessMode.READABLE_WRITABLE,
-            write_callback => (obj, prop, val) -> lowercase(val)
+            on_set => (obj, prop, val) -> lowercase(val)
         )
     end
 end

@@ -30,8 +30,8 @@ end
 
 @properties CallbackSensor begin
     value::Float64 => (
-        read_callback => (obj, name, val) -> val * 2.0,
-        write_callback => (obj, name, val) -> max(0.0, val)
+        on_get => (obj, name, val) -> val * 2.0,
+        on_set => (obj, name, val) -> max(0.0, val)
     )
     quality::UInt8
 end
@@ -113,7 +113,7 @@ function update_sensor_fast!(sensor, values)
     for val in values
         set_property!(sensor, :value, val)
         set_property!(sensor, :quality, 0x80)
-        # Simulate reading the values back
+        # Simulate getting the values back
         get_property(sensor, :value)
         get_property(sensor, :quality)
     end
@@ -123,7 +123,7 @@ function update_sensor_symbol!(sensor, values)
     for val in values
         set_property!(sensor, :value, val)
         set_property!(sensor, :quality, 0x80)
-        # Simulate reading the values back
+        # Simulate getting the values back
         get_property(sensor, :value)
         get_property(sensor, :quality)
     end

@@ -36,11 +36,11 @@ stringify_callback(obj, name, val::T) where {T} = string(val)
 @properties CallbackTest begin
     int_val::Int => (
         value => 42,
-        read_callback => inc_callback
+        on_get => inc_callback
     )
     any_val::Any => (
         value => "test",
-        read_callback => stringify_callback
+        on_get => stringify_callback
     )
 end
 

@@ -18,11 +18,11 @@ function test_dot_syntax()
         obj = TestDotSyntax()
 
         @testset "Basic Dot Syntax" begin
-            # Test reading with dot syntax
+            # Test getting with dot syntax
             @test obj.age == 25
             @test obj.readonly_prop == "readonly"
             
-            # Test writing with dot syntax
+            # Test setting with dot syntax
             obj.name = "Alice"
             @test obj.name == "Alice"
             

@@ -1,27 +1,27 @@
 # Define test types with anonymous functions in property definitions
 @properties TestAnonymousCallbacks begin
-    # Anonymous function for read callback
+    # Anonymous function for get callback
     name::String => (
         value => "default",
-        read_callback => (obj, name, val) -> uppercase(val)
+        on_get => (obj, name, val) -> uppercase(val)
     )
     
-    # Anonymous function for write callback
+    # Anonymous function for set callback
     email::String => (
-        write_callback => (obj, name, val) -> lowercase(val)
+        on_set => (obj, name, val) -> lowercase(val)
     )
     
-    # Both read and write callbacks as anonymous functions
+    # Both read and set callbacks as anonymous functions
     score::Int => (
         value => 10,
-        read_callback => (obj, name, val) -> val * 2,
-        write_callback => (obj, name, val) -> max(0, val)  # Ensure non-negative
+        on_get => (obj, name, val) -> val * 2,
+        on_set => (obj, name, val) -> max(0, val)  # Ensure non-negative
     )
     
     # Using anonymous functions with more complex logic
     status::Symbol => (
         value => :active,
-        write_callback => (obj, name, val) -> begin
+        on_set => (obj, name, val) -> begin
             # Multi-line anonymous function with conditionals
             if val == :pending || val == :active || val == :inactive
                 return val
@@ -29,7 +29,7 @@
                 return :invalid
             end
         end,
-        read_callback => (obj, name, val) -> begin
+        on_get => (obj, name, val) -> begin
             # Multi-line anonymous function for formatting
             if val == :active
                 return :ACTIVE
@@ -53,17 +53,17 @@ function test_anonymous_callbacks()
     @testset "Anonymous functions in property definitions" begin
         t = TestAnonymousCallbacks()
         
-        # Test read callback with anonymous function
+        # Test get callback with anonymous function
         @test get_property(t, :name) == "DEFAULT"  # Should be uppercase
         set_property!(t, :name, "test")
         @test get_property(t, :name) == "TEST"  # Should be uppercase
         
-        # Test write callback with anonymous function
+        # Test set callback with anonymous function
         set_property!(t, :email, "USER@EXAMPLE.COM")
         @test get_property(t, :email) == "user@example.com"  # Should be lowercase
         
-        # Test both read and write callbacks
-        @test get_property(t, :score) == 20  # Default 10 * 2 from read callback
+        # Test both read and set callbacks
+        @test get_property(t, :score) == 20  # Default 10 * 2 from get callback
         set_property!(t, :score, -5)
         @test get_property(t, :score) == 0  # max(0, -5) = 0, then * 2 = 0
         set_property!(t, :score, 7)
@@ -76,7 +76,7 @@ function test_anonymous_callbacks()
         set_property!(t, :status, :inactive)
         @test get_property(t, :status) == :inactive  # No special transformation
         set_property!(t, :status, :unknown)
-        @test get_property(t, :status) == :invalid  # Converted by write callback
+        @test get_property(t, :status) == :invalid  # Converted by set callback
         
         # Test comparing anonymous callbacks vs. named callbacks
         tnamed = TestCallback()

@@ -4,21 +4,21 @@
 # Define the structs outside the function at the top level
 # Test basic functionality with anonymous function callbacks as shown in the README
 @properties ReadmePerson begin
-    # Anonymous function for read callback
+    # Anonymous function for get callback
     name::String => (
-        read_callback => (obj, name, val) -> uppercase(val)
+        on_get => (obj, name, val) -> uppercase(val)
     )
     
-    # Anonymous function for write callback
+    # Anonymous function for set callback
     email::String => (
-        write_callback => (obj, name, val) -> lowercase(val)
+        on_set => (obj, name, val) -> lowercase(val)
     )
     
-    # Both read and write callbacks
+    # Both read and set callbacks
     score::Int => (
         value => 10,
-        read_callback => (obj, name, val) -> val * 2,
-        write_callback => (obj, name, val) -> max(0, val)  # Ensure non-negative
+        on_get => (obj, name, val) -> val * 2,
+        on_set => (obj, name, val) -> max(0, val)  # Ensure non-negative
     )
 end
 
@@ -32,22 +32,22 @@ function test_readme_examples()
     # Create an instance and test the behavior
     person = ReadmePerson()
     
-    # Test read callback
+    # Test get callback
     set_property!(person, :name, "John")
     @test get_property(person, :name) == "JOHN"  # Should be uppercase
     
-    # Test write callback
+    # Test set callback
     set_property!(person, :email, "USER@EXAMPLE.COM")
     @test get_property(person, :email) == "user@example.com"  # Should be lowercase
     
     # Test both callbacks
-    @test get_property(person, :score) == 20  # 10 * 2 from read callback
+    @test get_property(person, :score) == 20  # 10 * 2 from get callback
     set_property!(person, :score, -5)
-    @test get_property(person, :score) == 0  # max(0, -5) = 0 from write callback, then * 2 from read callback
+    @test get_property(person, :score) == 0  # max(0, -5) = 0 from set callback, then * 2 from get callback
     set_property!(person, :score, 7)
     score_value = get_property(person, :score)
-    # Check that it applies the read_callback at least once (7 * 2 = 14)
-    # The exact value can be implementation-dependent if the read callback is applied multiple times
+    # Check that it applies the on_get at least once (7 * 2 = 14)
+    # The exact value can be implementation-dependent if the get callback is applied multiple times
     @test score_value >= 14 && score_value % 7 == 0
     
     # Test with_property and with_property! with anonymous functions

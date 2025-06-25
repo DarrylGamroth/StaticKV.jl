@@ -25,44 +25,44 @@ divide_cb(obj, name, val) = div(val, 2)
 # Callback testing
 @properties TestCallback begin
     uppercase::String => (
-        write_callback => uppercase_cb
+        on_set => uppercase_cb
     )
     lowercase::String => (
-        write_callback => lowercase_cb
+        on_set => lowercase_cb
     )
     redacted::String => (
-        read_callback => redacted_cb,
+        on_get => redacted_cb,
         value => "secret"
     )
     transformed::Int => (
-        write_callback => multiply_cb,
-        read_callback => divide_cb,
+        on_set => multiply_cb,
+        on_get => divide_cb,
         value => 10
     )
 end
 
 # Define additional callback functions for TestCallbacks
-name_read_cb(obj, name, val) = uppercase(val)
-name_write_cb(obj, name, val) = lowercase(val)
-count_write_cb(obj, name, val) = val < 0 ? 0 : val
-secret_read_cb(obj, name, val) = "REDACTED"
+name_get_cb(obj, name, val) = uppercase(val)
+name_set_cb(obj, name, val) = lowercase(val)
+count_set_cb(obj, name, val) = val < 0 ? 0 : val
+secret_get_cb(obj, name, val) = "REDACTED"
 
 # Additional callback testing
 @properties TestCallbacks begin
     name::String => (
         value => "Alice",
-        read_callback => name_read_cb,
-        write_callback => name_write_cb
+        on_get => name_get_cb,
+        on_set => name_set_cb
     )
     
     count::Int => (
         value => 0,
-        write_callback => count_write_cb  # Ensure count is non-negative
+        on_set => count_set_cb  # Ensure count is non-negative
     )
     
     secret::String => (
         value => "topsecret",
-        read_callback => secret_read_cb
+        on_get => secret_get_cb
     )
     
     values::Vector{Int} => (
@@ -107,7 +107,7 @@ limit_cb(obj, name, val) = val > 100 ? 100 : val
     # Test with complex callbacks
     recursive_cb::Int => (
         value => 1,
-        read_callback => identity_cb,
-        write_callback => limit_cb
+        on_get => identity_cb,
+        on_set => limit_cb
     )
 end

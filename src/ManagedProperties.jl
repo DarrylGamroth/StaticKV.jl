@@ -21,8 +21,8 @@ using ManagedProperties
     name::String
     age::Int => (access => AccessMode.READABLE)
     email::String => (
-        read_callback => (obj, prop, val) -> "***@***.com",
-        write_callback => (obj, prop, val) -> lowercase(val)
+        on_get => (obj, prop, val) -> "***@***.com",
+        on_set => (obj, prop, val) -> lowercase(val)
     )
 end
 
@@ -94,10 +94,10 @@ function process_attribute!(result, key, value)
         result[:value] = value
     elseif key === :access
         result[:access] = value
-    elseif key === :read_callback
-        result[:read_callback] = value
-    elseif key === :write_callback
-        result[:write_callback] = value
+    elseif key === :on_get
+        result[:on_get] = value
+    elseif key === :on_set
+        result[:on_set] = value
     else
         throw(ErrorException("Unknown property attribute: $key"))
     end
@@ -119,8 +119,8 @@ function parse_property_def(expr)
     # Initialize with defaults
     result[:value] = nothing
     result[:access] = :(ManagedProperties.AccessMode.READABLE_WRITABLE)
-    result[:read_callback] = nothing
-    result[:write_callback] = nothing
+    result[:on_get] = nothing
+    result[:on_set] = nothing
 
     # Helper function to check if type expression is a Union
     function is_union_type(type_expr)
@@ -238,14 +238,14 @@ function parse_property_def(expr)
 end
 
 """
-    @properties struct_name [clock_type=ClockType] [default_read_callback=fn] [default_write_callback=fn] begin
+    @properties struct_name [clock_type=ClockType] [default_on_get=fn] [default_on_set=fn] begin
         prop1::Type1
         prop2::Type2 => (access => AccessMode.READABLE)
         prop3::Type3 => (
             value => default_value,
             access => AccessMode.READABLE_WRITABLE,
-            read_callback => custom_read_fn,
-            write_callback => custom_write_fn
+            on_get => custom_get_fn,
+            on_set => custom_set_fn
         )
     end
 
@@ -264,13 +264,13 @@ Create a struct with managed properties using direct field storage and compile-t
 # Property attributes
 - `value`: Default value for the property
 - `access`: Access control flags (e.g., `AccessMode.READABLE_WRITABLE`)
-- `read_callback`: Custom function called when reading: `(obj, name, value) -> transformed_value`
-- `write_callback`: Custom function called when writing: `(obj, name, value) -> transformed_value`
+- `on_get`: Custom function called when getting: `(obj, name, value) -> transformed_value`
+- `on_set`: Custom function called when setting: `(obj, name, value) -> transformed_value`
 
 # Struct-level parameters
 - `clock_type`: Concrete clock type to use (default: `Clocks.EpochClock`)
-- `default_read_callback`: Default read callback for all properties
-- `default_write_callback`: Default write callback for all properties
+- `default_on_get`: Default get callback for all properties
+- `default_on_set`: Default set callback for all properties
 
 # Examples
 ```julia
@@ -286,7 +286,7 @@ end
 end
 
 # With default callbacks
-@properties Person default_read_callback=my_read_fn default_write_callback=my_write_fn begin
+@properties Person default_on_get=my_get_fn default_on_set=my_set_fn begin
     name::String
 end
 
@@ -312,8 +312,8 @@ macro properties(struct_name, args...)
     end
 
     # Parse optional struct-level parameters
-    default_read_callback = nothing
-    default_write_callback = nothing
+    default_on_get = nothing
+    default_on_set = nothing
     clock_type = :(Clocks.EpochClock)  # Default to EpochClock
 
     # Handle struct-level parameters (everything except the last block)
@@ -323,10 +323,10 @@ macro properties(struct_name, args...)
             param_name = arg.args[1]
             param_value = arg.args[2]
 
-            if param_name == :default_read_callback
-                default_read_callback = param_value
-            elseif param_name == :default_write_callback
-                default_write_callback = param_value
+            if param_name == :default_on_get
+                default_on_get = param_value
+            elseif param_name == :default_on_set
+                default_on_set = param_value
             elseif param_name == :clock_type
                 clock_type = param_value
             else
@@ -449,8 +449,8 @@ macro properties(struct_name, args...)
     prop_types = [p[:type] for p in props]
     prop_values = [p[:value] for p in props]
     prop_access = [p[:access] for p in props]
-    prop_read_cbs = [p[:read_callback] for p in props]
-    prop_write_cbs = [p[:write_callback] for p in props]
+    prop_get_cbs = [p[:on_get] for p in props]
+    prop_set_cbs = [p[:on_set] for p in props]
 
     # Use gensym for clock to avoid naming conflicts (from DirectFields)
     clock_field = gensym(:clock)
@@ -507,21 +507,21 @@ macro properties(struct_name, args...)
         end)
 
         # Callback functions (improved scoping)
-        read_cb = if isnothing(prop_read_cbs[i])
-            isnothing(default_read_callback) ? :(ManagedProperties._direct_default_callback) : default_read_callback
+        get_cb = if isnothing(prop_get_cbs[i])
+            isnothing(default_on_get) ? :(ManagedProperties._direct_default_callback) : default_on_get
         else
-            prop_read_cbs[i]
+            prop_get_cbs[i]
         end
 
-        write_cb = if isnothing(prop_write_cbs[i])
-            isnothing(default_write_callback) ? :(ManagedProperties._direct_default_callback) : default_write_callback
+        set_cb = if isnothing(prop_set_cbs[i])
+            isnothing(default_on_set) ? :(ManagedProperties._direct_default_callback) : default_on_set
         else
-            prop_write_cbs[i]
+            prop_set_cbs[i]
         end
 
         push!(metadata_functions, quote
-            @inline _get_read_callback(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) = $(read_cb)
-            @inline _get_write_callback(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) = $(write_cb)
+            @inline _get_on_get(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) = $(get_cb)
+            @inline _get_on_set(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) = $(set_cb)
         end)
     end
 
@@ -543,7 +543,7 @@ macro properties(struct_name, args...)
                 isnothing(value) && throw(ErrorException("Property not set"))
 
                 # Compile-time callback (optimized away for defaults)
-                callback = _get_read_callback($(struct_name), Val($(QuoteNode(name))))
+                callback = _get_on_get($(struct_name), Val($(QuoteNode(name))))
                 return callback(p, $(QuoteNode(name)), value)
             end
 
@@ -554,7 +554,7 @@ macro properties(struct_name, args...)
                     throw(ErrorException("Property not writable"))
 
                 # Compile-time callback (optimized away for defaults)
-                callback = _get_write_callback($(struct_name), Val($(QuoteNode(name))))
+                callback = _get_on_set($(struct_name), Val($(QuoteNode(name))))
                 transformed_value = callback(p, $(QuoteNode(name)), v)
 
                 # Direct field updates (improved clock field access)

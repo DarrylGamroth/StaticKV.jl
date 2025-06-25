@@ -10,7 +10,7 @@ using Test
     custom_read::String => (
         value => "original",
         access => AccessMode.READABLE_WRITABLE,
-        read_callback => (obj, name, val) -> "READ: $(val)"
+        on_get => (obj, name, val) -> "READ: $(val)"
     )
 end
 

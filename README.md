@@ -8,7 +8,7 @@ A high-performance Julia package that provides a macro-based system for creating
 - **Compile-time Metadata**: Access control and callbacks stored at type level for zero overhead
 - **Concrete Types**: No parametric complexity - structs can be used as fields anywhere
 - **Property Access Control**: Define each property as readable and/or writable
-- **Custom Callbacks**: Define custom read and write transformations for properties  
+- **Custom Callbacks**: Define custom get and write transformations for properties
 - **Time Tracking**: Automatically track when properties were last modified
 - **Type Safety**: Full type system integration with Julia's type system
 - **Zero Allocations**: Property access operations allocate no memory after warmup
@@ -16,11 +16,11 @@ A high-performance Julia package that provides a macro-based system for creating
 
 ## Key Benefits
 
-✅ **Concrete, non-parametric types** - Easy to use as struct fields  
-✅ **Zero-allocation property access** - No memory allocations for get/set operations  
-✅ **Compile-time callback optimization** - Default callbacks optimized away completely  
-✅ **Type-stable usage** - Works perfectly in collections and as struct fields  
-✅ **Named function callbacks** - Full support for custom callback functions  
+✅ **Concrete, non-parametric types** - Easy to use as struct fields
+✅ **Zero-allocation property access** - No memory allocations for get/set operations
+✅ **Compile-time callback optimization** - Default callbacks optimized away completely
+✅ **Type-stable usage** - Works perfectly in collections and as struct fields
+✅ **Named function callbacks** - Full support for custom callback functions
 
 ## Installation
 
@@ -43,16 +43,16 @@ using ManagedProperties
     name::String
     age::Int => (access => AccessMode.READABLE_WRITABLE)
     address::String => (
-        read_callback => (obj, name, val) -> "REDACTED",  # Custom read transformation
-        write_callback => (obj, name, val) -> uppercase(val)  # Custom write transformation
+        on_get => (obj, name, val) -> "REDACTED",  # Custom get transformation
+        on_set => (obj, name, val) -> uppercase(val)  # Custom set transformation
     )
     email::String => (
-        write_callback => (obj, name, val) -> lowercase(val)  # Always store lowercase
+        on_set => (obj, name, val) -> lowercase(val)  # Always store lowercase
     )
     score::Int => (
         value => 0,
-        read_callback => (obj, name, val) -> val * 2,      # Double when reading
-        write_callback => (obj, name, val) -> max(0, val)  # Ensure non-negative
+        on_get => (obj, name, val) -> val * 2,      # Double when getting
+        on_set => (obj, name, val) -> max(0, val)  # Ensure non-negative
     )
 end
 
@@ -73,7 +73,7 @@ set_property!(person, :address, "123 Main St")
 
 # Access properties
 println(get_property(person, :name))    # "Alice"
-println(get_property(person, :address)) # "REDACTED" (read callback applied)
+println(get_property(person, :address)) # "REDACTED" (get callback applied)
 println(get_property(person, :email))   # "alice@example.com" (stored lowercase)
 
 # Check property status
@@ -93,10 +93,10 @@ The `@properties` macro allows defining properties with various attributes:
 
 ```julia
 
-function transform_for_reading(obj, name, val)
+function transform_for_getting(obj, name, val)
 end
 
-function transform_for_writing(obj, name, val)
+function transform_for_setting(obj, name, val)
 end
 
 @properties TypeName begin
@@ -105,22 +105,22 @@ end
 
     # Property with initial value
     with_value::Type => (value => initial_value)
-    
+
     # Property with access control
     readonly_prop::Type => (access => AccessMode.READABLE)
-    
+
     # Property with custom callbacks
     custom_prop::Type => (
-        read_callback => transform_for_reading(obj, name, val),
-        write_callback => transform_for_writing(obj, name, val)
+        on_get => transform_for_getting(obj, name, val),
+        on_set => transform_for_setting(obj, name, val)
     )
-    
+
     # Combining multiple attributes
     complex_prop::Type => (
         value => initial_value,
         access => AccessMode.READABLE_WRITABLE,
-        read_callback => my_read_fn,
-        write_callback => my_write_fn
+        on_get => my_get_fn,
+        on_set => my_set_fn
     )
 end
 ```
@@ -140,7 +140,7 @@ Callbacks in ManagedProperties.jl provide a powerful way to transform, validate,
 
 ### Callback Function Signatures
 
-Both read and write callbacks follow the same function signature:
+Both read and set callbacks follow the same function signature:
 
 ```julia
 callback_function(obj, prop_name, value) -> transformed_value
@@ -149,21 +149,21 @@ callback_function(obj, prop_name, value) -> transformed_value
 Where:
 - `obj`: The instance of your type that owns the property
 - `prop_name`: The Symbol representing the property name
-- `value`: The current value (for read callbacks) or the input value (for write callbacks)
+- `value`: The current value (for get callbacks) or the input value (for set callbacks)
 - `transformed_value`: The value returned after transformation (must be of the same type as the property)
 
-### Read Callbacks
+### Get Callbacks
 
-Read callbacks are executed when `get_property` is called and allow you to transform the raw stored value before it's returned to the caller:
+Get callbacks are executed when `get_property` is called and allow you to transform the raw stored value before it's returned to the caller:
 
 - Executed during: `get_property(obj, prop_name)`
 - Input: The actual stored value
 - Output: The transformed value returned to the caller
 - Common uses: Masking sensitive data, formatting values, applying transformations, computing derived values
 
-### Write Callbacks
+### Set Callbacks
 
-Write callbacks are executed when `set_property!` is called and allow you to transform or validate input values before they're stored:
+Set callbacks are executed when `set_property!` is called and allow you to transform or validate input values before they're stored:
 
 - Executed during: `set_property!(obj, prop_name, value)`
 - Input: The value provided to `set_property!`
@@ -172,14 +172,14 @@ Write callbacks are executed when `set_property!` is called and allow you to tra
 
 ### Callback Order and Flow
 
-1. When writing a property (`set_property!`):
-   - The write callback is applied first to transform the input value
+1. When setting a property (`set_property!`):
+   - The set callback is applied first to transform the input value
    - The transformed value is then stored in the property
    - The timestamp is updated
 
-2. When reading a property (`get_property`):
+2. When getting a property (`get_property`):
    - The raw stored value is retrieved
-   - The read callback is applied to transform the value
+   - The get callback is applied to transform the value
    - The transformed value is returned
 
 ### Examples
@@ -196,9 +196,9 @@ name_normalizer(obj, name, val) = titlecase(val)  # Ensure consistent capitaliza
 
 # Using callbacks in property definition
 @properties Person begin
-    name::String => (write_callback => name_normalizer)
-    age::Int => (write_callback => age_validator)
-    credit_card::String => (read_callback => card_masker)
+    name::String => (on_set => name_normalizer)
+    age::Int => (on_set => age_validator)
+    credit_card::String => (on_get => card_masker)
 end
 ```
 
@@ -235,28 +235,28 @@ As seen in the `Person` example above, you can use anonymous functions for prope
 
 ```julia
 @properties CustomCallbacks begin
-    # Anonymous function for read callback
+    # Anonymous function for get callback
     username::String => (
-        read_callback => (obj, name, val) -> uppercase(val)  # Always show uppercase
+        on_get => (obj, name, val) -> uppercase(val)  # Always show uppercase
     )
-    
-    # Anonymous function for write callback
+
+    # Anonymous function for set callback
     password::String => (
-        read_callback => (obj, name, val) -> "********",     # Hide actual value
-        write_callback => (obj, name, val) -> hash(val)      # Store hashed value
+        on_get => (obj, name, val) -> "********",     # Hide actual value
+        on_set => (obj, name, val) -> hash(val)      # Store hashed value
     )
-    
+
     # Data validation with callbacks
     age::Int => (
         value => 18,
-        write_callback => (obj, name, val) -> max(0, min(120, val))  # Clamp between 0-120
+        on_set => (obj, name, val) -> max(0, min(120, val))  # Clamp between 0-120
     )
-    
+
     # Combined read/write transformations
     score::Int => (
         value => 0,
-        read_callback => (obj, name, val) -> val * 2,      # Double the score when read
-        write_callback => (obj, name, val) -> max(0, val)  # Ensure non-negative
+        on_get => (obj, name, val) -> val * 2,      # Double the score when read
+        on_set => (obj, name, val) -> max(0, val)  # Ensure non-negative
     )
 end
 ```
