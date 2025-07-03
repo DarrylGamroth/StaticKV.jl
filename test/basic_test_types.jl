@@ -1,14 +1,14 @@
 # Module-level test type definitions
 
-# Basic property testing
-@properties TestBasic begin
+# Basic key-value store testing
+@kvstore TestBasic begin
     name::String
     age::Int => (value => 0)
     optional::Float64
 end
 
 # Access control testing
-@properties TestAccess begin
+@kvstore TestAccess begin
     readable::String => (value => "read-only", access => AccessMode.READABLE)
     writable::String => (value => "initial", access => AccessMode.WRITABLE)
     readwrite::String => (value => "both", access => AccessMode.READABLE_WRITABLE)
@@ -16,14 +16,14 @@ end
 end
 
 # Define callback functions at module level
-uppercase_cb(obj, name, val) = uppercase(val)
-lowercase_cb(obj, name, val) = lowercase(val)
-redacted_cb(obj, name, val) = "REDACTED"
-multiply_cb(obj, name, val) = val * 2
-divide_cb(obj, name, val) = div(val, 2)
+uppercase_cb(obj, key, val) = uppercase(val)
+lowercase_cb(obj, key, val) = lowercase(val)
+redacted_cb(obj, key, val) = "REDACTED"
+multiply_cb(obj, key, val) = val * 2
+divide_cb(obj, key, val) = div(val, 2)
 
 # Callback testing
-@properties TestCallback begin
+@kvstore TestCallback begin
     uppercase::String => (
         on_set => uppercase_cb
     )
@@ -42,13 +42,13 @@ divide_cb(obj, name, val) = div(val, 2)
 end
 
 # Define additional callback functions for TestCallbacks
-name_get_cb(obj, name, val) = uppercase(val)
-name_set_cb(obj, name, val) = lowercase(val)
-count_set_cb(obj, name, val) = val < 0 ? 0 : val
-secret_get_cb(obj, name, val) = "REDACTED"
+name_get_cb(obj, key, val) = uppercase(val)
+name_set_cb(obj, key, val) = lowercase(val)
+count_set_cb(obj, key, val) = val < 0 ? 0 : val
+secret_get_cb(obj, key, val) = "REDACTED"
 
 # Additional callback testing
-@properties TestCallbacks begin
+@kvstore TestCallbacks begin
     name::String => (
         value => "Alice",
         on_get => name_get_cb,
@@ -71,7 +71,7 @@ secret_get_cb(obj, name, val) = "REDACTED"
 end
 
 # Utility function testing
-@properties TestUtility begin
+@kvstore TestUtility begin
     name::String
     age::Int => (value => 20)
     height::Float64 => (value => 170.5)
@@ -79,7 +79,7 @@ end
 end
 
 # Edge case testing
-@properties TestEdgeCases begin
+@kvstore TestEdgeCases begin
     complex::Complex{Float64} => (value => 0.0 + 0.0im)
     string_val::String => (value => "")
     mutable_container::Vector{Int} => (value => [1, 2, 3])
@@ -87,11 +87,11 @@ end
 end
 
 # Define callback functions for edge cases
-identity_cb(obj, name, val) = val
-limit_cb(obj, name, val) = val > 100 ? 100 : val
+identity_cb(obj, key, val) = val
+limit_cb(obj, key, val) = val > 100 ? 100 : val
 
 # More detailed edge case testing
-@properties TestExtendedEdgeCases begin
+@kvstore TestExtendedEdgeCases begin
     # Test with various types
     nothing_val::Nothing => (value => nothing)
     string_type::String => (value => "default_string")

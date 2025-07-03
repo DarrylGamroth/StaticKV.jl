@@ -1,7 +1,7 @@
-# Tests for field generator macro expansion within @properties
+# Tests for field generator macro expansion within @kvstore
 
 using Test
-using ManagedProperties
+using StaticKV
 
 # Set up test environment variables
 ENV["SUB_DATA_URI_1"] = "aeron:udp?endpoint=0.0.0.0:40123"
@@ -9,7 +9,7 @@ ENV["SUB_DATA_STREAM_1"] = "4"
 ENV["SUB_DATA_URI_2"] = "aeron:udp?endpoint=0.0.0.0:40124" 
 ENV["SUB_DATA_STREAM_2"] = "8"
 
-# Field generator macros that can be used within @properties blocks
+# Field generator macros that can be used within @kvstore blocks
 macro generate_data_uri_fields()
     fields = []
     
@@ -112,14 +112,14 @@ macro generate_combined_fields()
 end
 
 # Define structs at module level
-@properties ConfigStruct begin
+@kvstore ConfigStruct begin
     name::String => (value => "config1")
     @generate_data_uri_fields
     @generate_timestamp_fields
     @generate_counter_fields message packet event
 end
 
-@properties ComplexStruct begin
+@kvstore ComplexStruct begin
     id::String => (value => "complex-1")
     
     # Use the combined fields macro
@@ -129,7 +129,7 @@ end
     extra::Bool => (value => true)
 end
 
-@properties SecuredUser begin
+@kvstore SecuredUser begin
     id::String => (value => "user-1")
     @generate_secured_fields
 end
@@ -140,50 +140,50 @@ function test_macro_expansion()
         # Create a test instance
         config = ConfigStruct()
         
-        # Test that all expected properties are present
-        @test :name in property_names(config)
-        @test :DataURI1 in property_names(config)
-        @test :DataStreamID1 in property_names(config)
-        @test :created_at in property_names(config)
-        @test :updated_at in property_names(config)
-        @test :version in property_names(config)
-        @test :message_count in property_names(config)
-        @test :message_rate in property_names(config)
+        # Test that all expected keys are present
+        @test :name in keynames(config)
+        @test :DataURI1 in keynames(config)
+        @test :DataStreamID1 in keynames(config)
+        @test :created_at in keynames(config)
+        @test :updated_at in keynames(config)
+        @test :version in keynames(config)
+        @test :message_count in keynames(config)
+        @test :message_rate in keynames(config)
 
-        # Test property values (ensure the URI matches what's in the ENV)
-        @test get_property(config, :DataURI1) == ENV["SUB_DATA_URI_1"]
-        @test get_property(config, :DataStreamID1) == 4
-        @test get_property(config, :message_count) == 0
-        @test get_property(config, :version) == 0x00000001
+        # Test key values (ensure the URI matches what's in the ENV)
+        @test getkey(config, :DataURI1) == ENV["SUB_DATA_URI_1"]
+        @test getkey(config, :DataStreamID1) == 4
+        @test getkey(config, :message_count) == 0
+        @test getkey(config, :version) == 0x00000001
     end
     
     # Test nested macro usage
     @testset "Nested Macro Composition" begin
         complex = ComplexStruct()
         
-        # Test property generation
-        @test length(property_names(complex)) > 10
-        @test :audit_created_at in property_names(complex)
-        @test :audit_updated_at in property_names(complex)
-        @test :request_count in property_names(complex)
-        @test :response_rate in property_names(complex)
-        @test :error_count in property_names(complex)
-        @test :extra in property_names(complex)
+        # Test key generation
+        @test length(keynames(complex)) > 10
+        @test :audit_created_at in keynames(complex)
+        @test :audit_updated_at in keynames(complex)
+        @test :request_count in keynames(complex)
+        @test :response_rate in keynames(complex)
+        @test :error_count in keynames(complex)
+        @test :extra in keynames(complex)
     end
 
     # Test advanced features like access control
     @testset "Access Control and Callbacks" begin
         user = SecuredUser()
 
-        # Test read-only property
-        @test_throws Exception set_property!(user, :username, "admin")
+        # Test read-only key
+        @test_throws Exception setkey!(user, :username, "admin")
         
-        # Test writable properties
-        set_property!(user, :password, "secret123")
-        set_property!(user, :email, "ADMIN@EXAMPLE.COM")
+        # Test writable keys
+        setkey!(user, :password, "secret123")
+        setkey!(user, :email, "ADMIN@EXAMPLE.COM")
         
         # Test value transformation via callbacks
-        @test get_property(user, :email) == "admin@example.com"
-        @test get_property(user, :password) == "********"
+        @test getkey(user, :email) == "admin@example.com"
+        @test getkey(user, :password) == "********"
     end
 end

@@ -1,11 +1,11 @@
-using ManagedProperties
+using StaticKV
 using Test
 
 # Include test type definitions first
 include("basic_test_types.jl")
 
 # Include all test files
-include("property_basics.jl")
+include("key_value_basics.jl")
 include("access_control.jl")
 include("callbacks.jl")
 include("utility_functions.jl")
@@ -13,14 +13,14 @@ include("edge_cases.jl")
 include("anonymous_callbacks.jl")
 include("allocation_tests.jl")
 include("default_callbacks.jl")
-include("property_bag_interface.jl")
-include("macro_expansion.jl")    # Test field generator macro expansion
-include("dot_syntax.jl")        # Test dot syntax property access
+include("kvstore_interface.jl")
+include("macro_expansion.jl")
+include("dot_syntax.jl")
 
 # Run all tests
-@testset verbose=true "ManagedProperties.jl" begin
-    @testset "Property Basics" begin
-        test_property_basics()
+@testset verbose=true "StaticKV.jl" begin
+    @testset "Key-Value Store Basics" begin
+        test_key_value_basics()
     end
 
     @testset "Access Control" begin
@@ -47,8 +47,8 @@ include("dot_syntax.jl")        # Test dot syntax property access
         test_anonymous_callbacks()
     end
     
-    @testset "Property Bag Interface" begin
-        test_property_bag_interface()
+    @testset "Key-Value Store Interface" begin
+        test_kvstore_interface()
     end
     
     @testset "Allocation Tests" begin

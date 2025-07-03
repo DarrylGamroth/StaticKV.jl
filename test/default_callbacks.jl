@@ -1,6 +1,6 @@
 # Test custom defaults for read and set callbacks
 using Test
-using ManagedProperties
+using StaticKV
 
 # Define custom default callbacks
 custom_get_cb(props, name, val) = "Custom Get: $val"
@@ -8,12 +8,12 @@ custom_set_cb(props, name, val::String) = uppercase(val)
 custom_set_cb(props, name, val::Number) = val  # Pass through for numbers
 
 # Create a simple structure with default properties
-@properties TestCustomDefaultCallbacks default_on_get=custom_get_cb default_on_set=custom_set_cb begin
+@kvstore TestCustomDefaultCallbacks default_on_get=custom_get_cb default_on_set=custom_set_cb begin
     name::String
     age::Int
 end
 
-@properties TestDefaultCallbacks begin
+@kvstore TestDefaultCallbacks begin
     name::String
     age::Int
 end
@@ -24,13 +24,13 @@ function test_default_callbacks()
     # Create an instance with custom default callbacks
     t = TestCustomDefaultCallbacks()
 
-    # Set properties
-    set_property!(t, :name, "Alice")
-    set_property!(t, :age, 30)
+    # Set keys
+    setkey!(t, :name, "Alice")
+    setkey!(t, :age, 30)
 
     # Test that the custom default get callback is used
-    @test get_property(t, :name) == "Custom Get: ALICE"
-    @test get_property(t, :age) == "Custom Get: 30"
+    @test getkey(t, :name) == "Custom Get: ALICE"
+    @test getkey(t, :age) == "Custom Get: 30"
 
     # Test that the custom default set callback is used
     raw_value = getfield(t, :name)
@@ -38,6 +38,6 @@ function test_default_callbacks()
     
     # Create with regular defaults for comparison
     t2 = TestDefaultCallbacks()
-    set_property!(t2, :name, "Alice")
-    @test get_property(t2, :name) == "Alice" # Regular default callbacks
+    setkey!(t2, :name, "Alice")
+    @test getkey(t2, :name) == "Alice" # Regular default callbacks
 end

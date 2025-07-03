@@ -1,34 +1,34 @@
-module ManagedProperties
+module StaticKV
 
 """
-    ManagedProperties
+    StaticKV
 
-A high-performance implementation of managed properties with direct field storage and compile-time metadata.
-This version creates concrete, non-parametric structs that are easy to use as fields in other structs.
+A high-performance static key-value store implementation with direct field storage and compile-time metadata.
+Creates concrete, type-safe structs that behave like key-value stores but with struct-level performance.
 
 # Key Features
 - **Direct field storage**: `Union{Nothing,T}` for values, `Int64` for timestamps
 - **Compile-time metadata**: Access control and callbacks stored at type level
 - **Zero overhead**: Default callbacks optimized away completely
 - **Type-stable**: All operations fully optimized by Julia compiler
-- **Macro expansion**: Support for field generator macros in property blocks
+- **Static keys**: Keys are known at compile time for maximum performance
 
 # Example
 ```julia
-using ManagedProperties
+using StaticKV
 
-@properties Person begin
+@kvstore Person begin
     name::String
     age::Int => (access => AccessMode.READABLE)
     email::String => (
-        on_get => (obj, prop, val) -> "***@***.com",
-        on_set => (obj, prop, val) -> lowercase(val)
+        on_get => (obj, key, val) -> "***@***.com",
+        on_set => (obj, key, val) -> lowercase(val)
     )
 end
 
 person = Person()
-set_property!(person, :name, "Alice")
-println(get_property(person, :name))  # "Alice"
+person[:name] = "Alice"        # Key-value syntax
+println(person[:name])         # "Alice"
 
 # Can be used as concrete field types
 struct Company
@@ -42,24 +42,23 @@ using Clocks
 using MacroTools
 
 # Export public API
-export @properties, AccessMode
-export get_property, set_property!, reset_property!, property_type, is_set, all_properties_set
-export with_property, with_property!
-export with_properties
+export @kvstore, AccessMode
+export getkey, setkey!, resetkey!, keytype, isset, allkeysset
 export is_readable, is_writable, last_update
-export property_names
+export with_key, with_key!, with_keys
+export keynames
 export Clocks
 
 """
     AccessMode
 
-Module containing access control constants for property access.
+Module containing access control constants for key access.
 
 # Constants
 - `NONE`: No access (0x00)
-- `READABLE`: Property can be read (0x01)
-- `WRITABLE`: Property can be written (0x02)
-- `READABLE_WRITABLE`: Property can be both read and written (0x03)
+- `READABLE`: Key can be read (0x01)
+- `WRITABLE`: Key can be written (0x02)
+- `READABLE_WRITABLE`: Key can be both read and written (0x03)
 """
 module AccessMode
 const AccessModeType = UInt8
@@ -72,23 +71,23 @@ const READABLE_WRITABLE::AccessModeType = READABLE | WRITABLE
 """
     is_readable(flags)
 
-Check if the property has readable access based on its access flags.
+Check if the key has readable access based on its access flags.
 """
 @inline is_readable(flags) = !iszero(flags & READABLE)
 
 """
     is_writable(flags)
 
-Check if the property has writable access based on its access flags.
+Check if the key has writable access based on its access flags.
 """
 @inline is_writable(flags) = !iszero(flags & WRITABLE)
 
 end # AccessMode module
 
 # Default callback functions (zero overhead when inlined)
-@inline _direct_default_callback(obj, prop, value) = value
+@inline _direct_default_callback(obj, key, value) = value
 
-# Helper function to process property attributes
+# Helper function to process key attributes
 function process_attribute!(result, key, value)
     if key === :value
         result[:value] = value
@@ -99,26 +98,26 @@ function process_attribute!(result, key, value)
     elseif key === :on_set
         result[:on_set] = value
     else
-        throw(ErrorException("Unknown property attribute: $key"))
+        throw(ErrorException("Unknown key attribute: $key"))
     end
 end
 
 """
-    parse_property_def(expr)
+    parse_key_def(expr)
 
-Parse a property definition expression into a dictionary containing the property's
+Parse a key definition expression into a dictionary containing the key's
 name, type, default value, access mode, and callbacks.
 
 Uses MacroTools for AST manipulation and simple pattern analysis.
 """
-function parse_property_def(expr)
-    # Property definition parser
+function parse_key_def(expr)
+    # Key definition parser
 
     result = Dict{Symbol,Any}()
 
     # Initialize with defaults
     result[:value] = nothing
-    result[:access] = :(ManagedProperties.AccessMode.READABLE_WRITABLE)
+    result[:access] = :(StaticKV.AccessMode.READABLE_WRITABLE)
     result[:on_get] = nothing
     result[:on_set] = nothing
 
@@ -132,7 +131,7 @@ function parse_property_def(expr)
 
     # Make sure expr is an Expr
     if !(expr isa Expr)
-        throw(ErrorException("Expected property definition, got: $(typeof(expr))"))
+        throw(ErrorException("Expected key definition, got: $(typeof(expr))"))
     end
 
     # Ensure expr is fully cleaned by stripping any module qualifications
@@ -147,7 +146,7 @@ function parse_property_def(expr)
         if name_expr isa Symbol
             result[:name] = name_expr
         else
-            throw(ErrorException("Property name must be a symbol, got: $(typeof(name_expr))"))
+            throw(ErrorException("Key name must be a symbol, got: $(typeof(name_expr))"))
         end
 
         # Extract the type
@@ -155,7 +154,7 @@ function parse_property_def(expr)
 
         # Check for Union types
         if is_union_type(result[:type])
-            throw(ErrorException("Union types are not allowed in property definitions as they conflict with the internal representation of unset properties"))
+            throw(ErrorException("Union types are not allowed in key definitions as they conflict with the internal representation of unset keys"))
         end
 
         return result
@@ -178,7 +177,7 @@ function parse_property_def(expr)
         if name_expr isa Symbol
             result[:name] = name_expr
         else
-            throw(ErrorException("Property name must be a symbol, got: $(typeof(name_expr))"))
+            throw(ErrorException("Key name must be a symbol, got: $(typeof(name_expr))"))
         end
 
         # Extract the type
@@ -186,7 +185,7 @@ function parse_property_def(expr)
 
         # Check for Union types
         if is_union_type(result[:type])
-            throw(ErrorException("Union types are not allowed in property definitions as they conflict with the internal representation of unset properties"))
+            throw(ErrorException("Union types are not allowed in key definitions as they conflict with the internal representation of unset keys"))
         end
 
         # Parse attributes
@@ -234,14 +233,14 @@ function parse_property_def(expr)
     end
 
     # If we reach here, the expression didn't match any of our expected patterns
-    throw(ErrorException("Expected property definition (name::Type or name::Type => attrs), got expression with head: $(clean_expr.head)"))
+    throw(ErrorException("Expected key definition (name::Type or name::Type => attrs), got expression with head: $(clean_expr.head)"))
 end
 
 """
-    @properties struct_name [clock_type=ClockType] [default_on_get=fn] [default_on_set=fn] begin
-        prop1::Type1
-        prop2::Type2 => (access => AccessMode.READABLE)
-        prop3::Type3 => (
+    @kvstore struct_name [clock_type=ClockType] [default_on_get=fn] [default_on_set=fn] begin
+        key1::Type1
+        key2::Type2 => (access => AccessMode.READABLE)
+        key3::Type3 => (
             value => default_value,
             access => AccessMode.READABLE_WRITABLE,
             on_get => custom_get_fn,
@@ -249,7 +248,7 @@ end
         )
     end
 
-Create a struct with managed properties using direct field storage and compile-time metadata.
+Create a struct with a static key-value store using direct field storage and compile-time metadata.
 
 # Benefits
 - **Concrete types**: No parametric complexity, easy to use as struct fields
@@ -257,41 +256,41 @@ Create a struct with managed properties using direct field storage and compile-t
 - **Type stable**: All metadata resolved at compile time
 - **Memory efficient**: Direct field storage with minimal overhead
 
-# Property definition formats
-- `name::Type`: Simple property with type
-- `name::Type => (key => value, ...)`: Property with custom attributes
+# Key definition formats
+- `name::Type`: Simple key with type
+- `name::Type => (attribute => value, ...)`: Key with custom attributes
 
-# Property attributes
-- `value`: Default value for the property
+# Key attributes
+- `value`: Default value for the key
 - `access`: Access control flags (e.g., `AccessMode.READABLE_WRITABLE`)
-- `on_get`: Custom function called when getting: `(obj, name, value) -> transformed_value`
-- `on_set`: Custom function called when setting: `(obj, name, value) -> transformed_value`
+- `on_get`: Custom function called when getting: `(obj, key, value) -> transformed_value`
+- `on_set`: Custom function called when setting: `(obj, key, value) -> transformed_value`
 
 # Struct-level parameters
 - `clock_type`: Concrete clock type to use (default: `Clocks.EpochClock`)
-- `default_on_get`: Default get callback for all properties
-- `default_on_set`: Default set callback for all properties
+- `default_on_get`: Default get callback for all keys
+- `default_on_set`: Default set callback for all keys
 
 # Examples
 ```julia
 # Basic usage with default EpochClock
-@properties Person begin
+@kvstore Person begin
     name::String
 end
 
 # Using CachedEpochClock for better performance
-@properties Person clock_type=Clocks.CachedEpochClock begin
+@kvstore Person clock_type=Clocks.CachedEpochClock begin
     name::String
     age::Int
 end
 
 # With default callbacks
-@properties Person default_on_get=my_get_fn default_on_set=my_set_fn begin
+@kvstore Person default_on_get=my_get_fn default_on_set=my_set_fn begin
     name::String
 end
 
 # Using field generator macros
-@properties Config begin
+@kvstore Config begin
     name::String
 
     # Field generator macros are expanded during compilation
@@ -300,15 +299,15 @@ end
 end
 ```
 """
-macro properties(struct_name, args...)
-    # The last argument should always be the property block
+macro kvstore(struct_name, args...)
+    # The last argument should always be the key block
     if length(args) < 1
-        error("@properties requires a begin...end block after the struct name")
+        error("@kvstore requires a begin...end block after the struct name")
     end
 
     block = args[end]
     if block.head != :block
-        error("@properties requires a begin...end block for property definitions")
+        error("@kvstore requires a begin...end block for key definitions")
     end
 
     # Parse optional struct-level parameters
@@ -337,9 +336,9 @@ macro properties(struct_name, args...)
         end
     end
 
-    # Extract property definitions and expand any macros
+    # Extract field definitions and expand any macros
     # This includes support for field generator macros like @generate_data_uri_fields
-    property_defs = []
+    key_defs = []
 
     # Process the block to handle macros and filter out non-expressions
     for expr in block.args
@@ -363,7 +362,7 @@ macro properties(struct_name, args...)
                     catch e2
                         try
                             # Try current module
-                            expanded = macroexpand(ManagedProperties, expr)
+                            expanded = macroexpand(StaticKV, expr)
                             success = true
                         catch e3
                             # Nothing worked, report error
@@ -381,26 +380,26 @@ macro properties(struct_name, args...)
                                 if !(sub_expr isa LineNumberNode) && sub_expr isa Expr
                                     # Strip module qualifications
                                     clean_expr = strip_module_qualifications(sub_expr)
-                                    push!(property_defs, clean_expr)
+                                    push!(key_defs, clean_expr)
                                 end
                             end
                         else
                             # Single expression expansion
                             clean_expr = strip_module_qualifications(expanded)
-                            push!(property_defs, clean_expr)
+                            push!(key_defs, clean_expr)
                         end
                     end
                 end
             else
-                # Regular property definition
-                push!(property_defs, expr)
+                # Regular key definition
+                push!(key_defs, expr)
             end
         end
     end
 
-    # Parse property definitions
+    # Parse key definitions
     props = []
-    for (index, def) in enumerate(property_defs)
+    for (index, def) in enumerate(key_defs)
         try
             # Check for module qualified names that need stripping
             if def isa Expr
@@ -408,10 +407,10 @@ macro properties(struct_name, args...)
                 def = strip_module_qualifications(def)
             end
 
-            # Parse the property definition
-            parsed_prop = parse_property_def(def)
+            # Parse the key definition
+            parsed_key = parse_key_def(def)
 
-            push!(props, parsed_prop)
+            push!(props, parsed_key)
         catch e
             # Simplify error messages
             if def isa Expr && def.head == :call && length(def.args) >= 3 && def.args[1] == :(=>)
@@ -430,27 +429,27 @@ macro properties(struct_name, args...)
                                  type isa Symbol || type isa Expr ? type : :Any),
                             strip_module_qualifications(attrs))
 
-                        parsed_prop = parse_property_def(clean_def)
-                        push!(props, parsed_prop)
+                        parsed_key = parse_key_def(clean_def)
+                        push!(props, parsed_key)
                         continue
                     end
                 catch
                     # If recovery fails, just report the original error
-                    error("Failed to parse property definition: $(def)")
+                    error("Failed to parse key definition: $(def)")
                 end
             else
-                error("Failed to parse property definition: $(def)")
+                error("Failed to parse key definition: $(def)")
             end
         end
     end
 
-    # Extract property information
-    prop_names = [p[:name] for p in props]
-    prop_types = [p[:type] for p in props]
-    prop_values = [p[:value] for p in props]
-    prop_access = [p[:access] for p in props]
-    prop_get_cbs = [p[:on_get] for p in props]
-    prop_set_cbs = [p[:on_set] for p in props]
+    # Extract key information
+    key_names = [k[:name] for k in props]
+    key_types = [k[:type] for k in props]
+    key_values = [k[:value] for k in props]
+    key_access = [k[:access] for k in props]
+    key_get_cbs = [k[:on_get] for k in props]
+    key_set_cbs = [k[:on_set] for k in props]
 
     # Use gensym for clock to avoid naming conflicts (from DirectFields)
     clock_field = gensym(:clock)
@@ -459,12 +458,12 @@ macro properties(struct_name, args...)
     struct_fields = []
 
     # Add value fields
-    for (name, type) in zip(prop_names, prop_types)
+    for (name, type) in zip(key_names, key_types)
         push!(struct_fields, :($(name)::Union{Nothing,$(type)}))
     end
 
     # Add timestamp fields (with underscore prefix to avoid collisions)
-    for name in prop_names
+    for name in key_names
         push!(struct_fields, :($(Symbol(:_, name, :_timestamp))::Int64))
     end
 
@@ -491,17 +490,17 @@ macro properties(struct_name, args...)
                 )
 
                 # Set default values directly (bypassing access control during construction)
-                $([if !isnothing(prop_values[i])
+                $([if !isnothing(key_values[i])
                     quote
-                        # Get the callback for this property
-                        callback = _get_on_set($(struct_name), Val($(QuoteNode(prop_names[i]))))
+                        # Get the callback for this key
+                        callback = _get_on_set($(struct_name), Val($(QuoteNode(key_names[i]))))
 
                         # Transform the default value through the callback
-                        transformed_value = callback(instance, $(QuoteNode(prop_names[i])), $(prop_values[i]))
+                        transformed_value = callback(instance, $(QuoteNode(key_names[i])), $(key_values[i]))
 
                         # Set the field directly (bypassing access checks since this is construction)
-                        setfield!(instance, $(QuoteNode(prop_names[i])), transformed_value)
-                        setfield!(instance, $(QuoteNode(Symbol(:_, prop_names[i], :_timestamp))), Clocks.time_nanos(clock))
+                        setfield!(instance, $(QuoteNode(key_names[i])), transformed_value)
+                        setfield!(instance, $(QuoteNode(Symbol(:_, key_names[i], :_timestamp))), Clocks.time_nanos(clock))
                     end
                 else
                     :()  # Empty expression for properties without defaults
@@ -512,29 +511,29 @@ macro properties(struct_name, args...)
         end
     end
 
-    # Generate compile-time metadata functions for each property
+    # Generate compile-time metadata functions for each key
     metadata_functions = []
 
-    for (i, name) in enumerate(prop_names)
+    for (i, name) in enumerate(key_names)
         # Access control functions (using private naming to avoid conflicts)
         push!(metadata_functions, quote
             @inline _is_readable(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) =
-                ManagedProperties.AccessMode.is_readable($(prop_access[i]))
+                StaticKV.AccessMode.is_readable($(key_access[i]))
             @inline _is_writable(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) =
-                ManagedProperties.AccessMode.is_writable($(prop_access[i]))
+                StaticKV.AccessMode.is_writable($(key_access[i]))
         end)
 
         # Callback functions (improved scoping)
-        get_cb = if isnothing(prop_get_cbs[i])
-            isnothing(default_on_get) ? :(ManagedProperties._direct_default_callback) : default_on_get
+        get_cb = if isnothing(key_get_cbs[i])
+            isnothing(default_on_get) ? :(StaticKV._direct_default_callback) : default_on_get
         else
-            prop_get_cbs[i]
+            key_get_cbs[i]
         end
 
-        set_cb = if isnothing(prop_set_cbs[i])
-            isnothing(default_on_set) ? :(ManagedProperties._direct_default_callback) : default_on_set
+        set_cb = if isnothing(key_set_cbs[i])
+            isnothing(default_on_set) ? :(StaticKV._direct_default_callback) : default_on_set
         else
-            prop_set_cbs[i]
+            key_set_cbs[i]
         end
 
         push!(metadata_functions, quote
@@ -543,68 +542,68 @@ macro properties(struct_name, args...)
         end)
     end
 
-    # Generate property-specific accessor methods
-    property_methods = []
+    # Generate key-specific accessor methods
+    key_methods = []
 
-    for (i, name) in enumerate(prop_names)
+    for (i, name) in enumerate(key_names)
         timestamp_field = Symbol(:_, name, :_timestamp)
 
-        push!(property_methods, quote
-            # Property-specific get_property method (improved from DirectFields)
-            @inline function get_property(p::$(struct_name), ::Val{$(QuoteNode(name))})
-                # Compile-time access check
+        push!(key_methods, quote
+            # Key-specific getkey method
+            @inline function getkey(k::$(struct_name), ::Val{$(QuoteNode(name))})
+                # Access check
                 _is_readable($(struct_name), Val($(QuoteNode(name)))) ||
-                    throw(ErrorException("Property not readable"))
+                    throw(ErrorException("Key not readable"))
 
                 # Direct field access
-                value = getfield(p, $(QuoteNode(name)))
-                isnothing(value) && throw(ErrorException("Property not set"))
+                value = getfield(k, $(QuoteNode(name)))
+                isnothing(value) && throw(ErrorException("Key not set"))
 
                 # Compile-time callback (optimized away for defaults)
                 callback = _get_on_get($(struct_name), Val($(QuoteNode(name))))
-                return callback(p, $(QuoteNode(name)), value)
+                return callback(k, $(QuoteNode(name)), value)
             end
 
-            # Property-specific set_property! method (improved clock access)
-            @inline function set_property!(p::$(struct_name), ::Val{$(QuoteNode(name))}, v)
-                # Compile-time access check
+            # Key-specific setkey! method
+            @inline function setkey!(k::$(struct_name), ::Val{$(QuoteNode(name))}, v)
+                # Access check
                 _is_writable($(struct_name), Val($(QuoteNode(name)))) ||
-                    throw(ErrorException("Property not writable"))
+                    throw(ErrorException("Key not writable"))
 
                 # Compile-time callback (optimized away for defaults)
                 callback = _get_on_set($(struct_name), Val($(QuoteNode(name))))
-                transformed_value = callback(p, $(QuoteNode(name)), v)
+                transformed_value = callback(k, $(QuoteNode(name)), v)
 
                 # Direct field updates (improved clock field access)
-                setfield!(p, $(QuoteNode(name)), transformed_value)
-                setfield!(p, $(QuoteNode(timestamp_field)), Clocks.time_nanos(getfield(p, $(QuoteNode(clock_field)))))
+                setfield!(k, $(QuoteNode(name)), transformed_value)
+                setfield!(k, $(QuoteNode(timestamp_field)), Clocks.time_nanos(getfield(k, $(QuoteNode(clock_field)))))
 
                 return transformed_value
             end
 
-            # Property-specific helper methods
-            @inline function is_set(p::$(struct_name), ::Val{$(QuoteNode(name))})
-                !isnothing(getfield(p, $(QuoteNode(name))))
+            # Key-specific helper methods
+            @inline function isset(k::$(struct_name), ::Val{$(QuoteNode(name))})
+                !isnothing(getfield(k, $(QuoteNode(name))))
             end
 
             # Public access control methods (delegate to private ones)
-            @inline function is_readable(p::$(struct_name), ::Val{$(QuoteNode(name))})
+            @inline function is_readable(k::$(struct_name), ::Val{$(QuoteNode(name))})
                 _is_readable($(struct_name), Val($(QuoteNode(name))))
             end
 
-            @inline function is_writable(p::$(struct_name), ::Val{$(QuoteNode(name))})
+            @inline function is_writable(k::$(struct_name), ::Val{$(QuoteNode(name))})
                 _is_writable($(struct_name), Val($(QuoteNode(name))))
             end
 
-            @inline function last_update(p::$(struct_name), ::Val{$(QuoteNode(name))})
-                getfield(p, $(QuoteNode(timestamp_field)))
+            @inline function last_update(k::$(struct_name), ::Val{$(QuoteNode(name))})
+                getfield(k, $(QuoteNode(timestamp_field)))
             end
 
-            @inline function reset_property!(p::$(struct_name), ::Val{$(QuoteNode(name))})
+            @inline function resetkey!(k::$(struct_name), ::Val{$(QuoteNode(name))})
                 _is_writable($(struct_name), Val($(QuoteNode(name)))) ||
-                    throw(ErrorException("Property not writable"))
-                setfield!(p, $(QuoteNode(name)), nothing)
-                setfield!(p, $(QuoteNode(timestamp_field)), -1)
+                    throw(ErrorException("Key not writable"))
+                setfield!(k, $(QuoteNode(name)), nothing)
+                setfield!(k, $(QuoteNode(timestamp_field)), -1)
                 return nothing
             end
         end)
@@ -612,131 +611,131 @@ macro properties(struct_name, args...)
 
     # Generate utility functions
     utility_functions = quote
-        # property_names function
-        @inline function property_names(p::$(struct_name))
-            $(Expr(:tuple, [QuoteNode(name) for name in prop_names]...))
+        # keynames function
+        @inline function keynames(k::$(struct_name))
+            $(Expr(:tuple, [QuoteNode(name) for name in key_names]...))
         end
 
         # Symbol-based dispatch functions (optimized if-else chains)
-        @inline function get_property(p::$(struct_name), s::Symbol)
-            $(if length(prop_names) == 0
-                :(throw(ErrorException("Property not found")))
+        @inline function getkey(k::$(struct_name), s::Symbol)
+            $(if length(key_names) == 0
+                :(throw(ErrorException("Key not found")))
             else
-                result = :(throw(ErrorException("Property not found")))
-                for name in reverse(prop_names)
-                    result = :(s === $(QuoteNode(name)) ? get_property(p, Val($(QuoteNode(name)))) : $result)
+                result = :(throw(ErrorException("Key not found")))
+                for name in reverse(key_names)
+                    result = :(s === $(QuoteNode(name)) ? getkey(k, Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
         end
 
-        @inline function set_property!(p::$(struct_name), s::Symbol, v)
-            $(if length(prop_names) == 0
-                :(throw(ErrorException("Property not found")))
+        @inline function setkey!(k::$(struct_name), s::Symbol, v)
+            $(if length(key_names) == 0
+                :(throw(ErrorException("Key not found")))
             else
-                result = :(throw(ErrorException("Property not found")))
-                for name in reverse(prop_names)
-                    result = :(s === $(QuoteNode(name)) ? set_property!(p, Val($(QuoteNode(name))), v) : $result)
+                result = :(throw(ErrorException("Key not found")))
+                for name in reverse(key_names)
+                    result = :(s === $(QuoteNode(name)) ? setkey!(k, Val($(QuoteNode(name))), v) : $result)
                 end
                 result
             end)
         end
 
-        @inline function is_set(p::$(struct_name), s::Symbol)
-            $(if length(prop_names) == 0
+        @inline function isset(k::$(struct_name), s::Symbol)
+            $(if length(key_names) == 0
                 :(false)
             else
                 result = :(false)
-                for name in reverse(prop_names)
-                    result = :(s === $(QuoteNode(name)) ? is_set(p, Val($(QuoteNode(name)))) : $result)
+                for name in reverse(key_names)
+                    result = :(s === $(QuoteNode(name)) ? isset(k, Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
         end
 
-        @inline function is_readable(p::$(struct_name), s::Symbol)
-            $(if length(prop_names) == 0
-                :(throw(ErrorException("Property not found")))
+        @inline function is_readable(k::$(struct_name), s::Symbol)
+            $(if length(key_names) == 0
+                :(throw(ErrorException("Key not found")))
             else
-                result = :(throw(ErrorException("Property not found")))
-                for name in reverse(prop_names)
+                result = :(throw(ErrorException("Key not found")))
+                for name in reverse(key_names)
                     result = :(s === $(QuoteNode(name)) ? _is_readable($(struct_name), Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
         end
 
-        @inline function is_writable(p::$(struct_name), s::Symbol)
-            $(if length(prop_names) == 0
-                :(throw(ErrorException("Property not found")))
+        @inline function is_writable(k::$(struct_name), s::Symbol)
+            $(if length(key_names) == 0
+                :(throw(ErrorException("Key not found")))
             else
-                result = :(throw(ErrorException("Property not found")))
-                for name in reverse(prop_names)
+                result = :(throw(ErrorException("Key not found")))
+                for name in reverse(key_names)
                     result = :(s === $(QuoteNode(name)) ? _is_writable($(struct_name), Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
         end
 
-        @inline function last_update(p::$(struct_name), s::Symbol)
-            $(if length(prop_names) == 0
-                :(throw(ErrorException("Property not found")))
+        @inline function last_update(k::$(struct_name), s::Symbol)
+            $(if length(key_names) == 0
+                :(throw(ErrorException("Key not found")))
             else
-                result = :(throw(ErrorException("Property not found")))
-                for name in reverse(prop_names)
-                    result = :(s === $(QuoteNode(name)) ? last_update(p, Val($(QuoteNode(name)))) : $result)
+                result = :(throw(ErrorException("Key not found")))
+                for name in reverse(key_names)
+                    result = :(s === $(QuoteNode(name)) ? last_update(k, Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
         end
 
-        @inline function reset_property!(p::$(struct_name), s::Symbol)
-            $(if length(prop_names) == 0
-                :(throw(ErrorException("Property not found")))
+        @inline function resetkey!(k::$(struct_name), s::Symbol)
+            $(if length(key_names) == 0
+                :(throw(ErrorException("Key not found")))
             else
-                result = :(throw(ErrorException("Property not found")))
-                for name in reverse(prop_names)
-                    result = :(s === $(QuoteNode(name)) ? reset_property!(p, Val($(QuoteNode(name)))) : $result)
+                result = :(throw(ErrorException("Key not found")))
+                for name in reverse(key_names)
+                    result = :(s === $(QuoteNode(name)) ? resetkey!(k, Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
         end
 
-        # Additional utility functions (from DirectFields version)
-        @inline function property_type(::Type{<:$(struct_name)}, s::Symbol)
-            $(if length(prop_names) == 0
+        # Additional utility functions
+        @inline function keytype(::Type{<:$(struct_name)}, s::Symbol)
+            $(if length(key_names) == 0
                 :(nothing)
             else
                 result = :(nothing)
-                for (i, name) in enumerate(reverse(prop_names))
-                    prop_type = prop_types[end-i+1]
-                    result = :(s === $(QuoteNode(name)) ? $(prop_type) : $result)
+                for (i, name) in enumerate(reverse(key_names))
+                    key_type = key_types[end-i+1]
+                    result = :(s === $(QuoteNode(name)) ? $(key_type) : $result)
                 end
                 result
             end)
         end
 
-        @inline property_type(p::$(struct_name), s::Symbol) = property_type(typeof(p), s)
+        @inline keytype(k::$(struct_name), s::Symbol) = keytype(typeof(k), s)
 
-        @inline function all_properties_set(p::$(struct_name))
-            $(if length(prop_names) == 0
+        @inline function allkeysset(k::$(struct_name))
+            $(if length(key_names) == 0
                 :(true)
             else
-                and_expr = prop_names[1] |> (name -> :(is_set(p, $(QuoteNode(name)))))
-                for name in prop_names[2:end]
-                    and_expr = :($(and_expr) && is_set(p, $(QuoteNode(name))))
+                and_expr = key_names[1] |> (name -> :(isset(k, $(QuoteNode(name)))))
+                for name in key_names[2:end]
+                    and_expr = :($(and_expr) && isset(k, $(QuoteNode(name))))
                 end
                 and_expr
             end)
         end
 
         # Improved pretty printing with better padding and formatting
-        function Base.show(io::IO, ::MIME"text/plain", p::$(struct_name))
-            println(io, "$($(QuoteNode(struct_name))) with properties:")
+        function Base.show(io::IO, ::MIME"text/plain", k::$(struct_name))
+            println(io, "$($(QuoteNode(struct_name))) with keys:")
 
-            names = property_names(p)
+            names = keynames(k)
             if isempty(names)
-                println(io, "  (no properties defined)")
+                println(io, "  (no keys defined)")
                 return
             end
 
@@ -754,16 +753,16 @@ macro properties(struct_name, args...)
             time_strs = String[]
 
             for name in names
-                value = getfield(p, name)
-                timestamp = getfield(p, Symbol(:_, name, :_timestamp))
+                value = getfield(k, name)
+                timestamp = getfield(k, Symbol(:_, name, :_timestamp))
 
                 # Type info
-                prop_type = property_type(p, name)
-                type_str = prop_type === nothing ? "Any" : string(prop_type)
+                key_type = keytype(k, name)
+                type_str = key_type === nothing ? "Any" : string(key_type)
 
                 # Access info
-                readable = is_readable(p, name)
-                writable = is_writable(p, name)
+                readable = is_readable(k, name)
+                writable = is_writable(k, name)
                 access_str = "[" * (readable ? "R" : "-") * (writable ? "W" : "-") * "]"
 
                 # Value info
@@ -785,7 +784,7 @@ macro properties(struct_name, args...)
                 max_value_len = max(max_value_len, length(value_str))
             end
 
-            # Print each property with aligned columns
+            # Print each key with aligned columns
             for i in 1:length(names)
                 name_padded = rpad(name_strs[i], max_name_len)
                 type_padded = rpad("::$(type_strs[i])", max_type_len + 2)  # +2 for "::" prefix
@@ -796,193 +795,193 @@ macro properties(struct_name, args...)
             end
         end
 
-        function Base.show(io::IO, p::$(struct_name))
-            set_count = count(name -> is_set(p, name), property_names(p))
-            total = length(property_names(p))
-            print(io, "$($(QuoteNode(struct_name))) $(set_count)/$(total) properties set")
+        function Base.show(io::IO, k::$(struct_name))
+            set_count = count(name -> isset(k, name), keynames(k))
+            total = length(keynames(k))
+            print(io, "$($(QuoteNode(struct_name))) $(set_count)/$(total) keys set")
         end
 
-        # Safe property access functions (from old API)
-        @inline function with_property(f::Function, p::$(struct_name), s::Symbol)
-            if !is_set(p, s)
-                throw(ErrorException("Property :$s is not set"))
+        # Safe key access functions (from old API)
+        @inline function with_key(f::Function, k::$(struct_name), s::Symbol)
+            if !isset(k, s)
+                throw(ErrorException("Key :$s is not set"))
             end
-            if !is_readable(p, s)
-                throw(ErrorException("Property :$s is not readable"))
+            if !is_readable(k, s)
+                throw(ErrorException("Key :$s is not readable"))
             end
-            f(get_property(p, s))
+            f(getkey(k, s))
         end
 
-        @inline function with_property!(f::Function, p::$(struct_name), s::Symbol)
-            if !is_set(p, s)
-                throw(ErrorException("Property :$s is not set"))
+        @inline function with_key!(f::Function, k::$(struct_name), s::Symbol)
+            if !isset(k, s)
+                throw(ErrorException("Key :$s is not set"))
             end
-            if !is_readable(p, s)
-                throw(ErrorException("Property :$s is not readable"))
+            if !is_readable(k, s)
+                throw(ErrorException("Key :$s is not readable"))
             end
-            if !is_writable(p, s)
-                throw(ErrorException("Property :$s is not writable"))
+            if !is_writable(k, s)
+                throw(ErrorException("Key :$s is not writable"))
             end
 
-            # Check if property type is isbits - if so, should throw error
-            prop_type = property_type(p, s)
-            if prop_type !== nothing && isbitstype(prop_type)
-                throw(ErrorException("Cannot mutate isbits property :$s in place"))
+            # Check if key type is isbits - if so, should throw error
+            key_type = keytype(k, s)
+            if key_type !== nothing && isbitstype(key_type)
+                throw(ErrorException("Cannot mutate isbits key :$s in place"))
             end
 
             # Get the current value and call the function
-            current_value = get_property(p, s)
+            current_value = getkey(k, s)
             result = f(current_value)
 
-            # For in-place mutations, we don't reassign the property value.
+            # For in-place mutations, we don't reassign the key value.
             # The function should modify the object directly and we just return the result.
-            # If the user wants to set a new value, they should use set_property! explicitly.
+            # If the user wants to set a new value, they should use setkey! explicitly.
             result
         end
 
-        @inline function with_properties(f::Function, p::$(struct_name), properties::Symbol...)
+        @inline function with_keys(f::Function, k::$(struct_name), keys::Symbol...)
             @inline function val_generator(i)
-                prop = properties[i]
-                if !is_set(p, prop)
-                    throw(ArgumentError("Property :\$prop is not set"))
+                prop = keys[i]
+                if !isset(k, prop)
+                    throw(ArgumentError("Key :\$prop is not set"))
                 end
-                if !is_readable(p, prop)
-                    throw(ArgumentError("Property :\$prop is not readable"))
+                if !is_readable(k, prop)
+                    throw(ArgumentError("Key :\$prop is not readable"))
                 end
-                get_property(p, prop)
+                getkey(k, prop)
             end
 
-            if length(properties) == 0
+            if length(keys) == 0
                 return f()
-            elseif length(properties) == 1
+            elseif length(keys) == 1
                 return f(val_generator(1))
-            elseif length(properties) == 2
+            elseif length(keys) == 2
                 return f(val_generator(1), val_generator(2))
-            elseif length(properties) == 3
+            elseif length(keys) == 3
                 return f(val_generator(1), val_generator(2), val_generator(3))
-            elseif length(properties) == 4
+            elseif length(keys) == 4
                 return f(val_generator(1), val_generator(2), val_generator(3), val_generator(4))
-            elseif length(properties) == 5
+            elseif length(keys) == 5
                 return f(val_generator(1), val_generator(2), val_generator(3), val_generator(4), val_generator(5))
             else
-                # For more than 5 properties, use splatting (less optimal but functional)
-                values = [val_generator(i) for i in 1:length(properties)]
+                # For more than 5 keys, use splatting (less optimal but functional)
+                values = [val_generator(i) for i in 1:length(keys)]
                 return f(values...)
             end
         end
 
         # Base interface functions for backward compatibility
-        @inline function Base.getindex(p::$(struct_name), key::Symbol)
-            get_property(p, key)
+        @inline function Base.getindex(k::$(struct_name), key::Symbol)
+            getkey(k, key)
         end
 
-        @inline function Base.getindex(p::$(struct_name), keys::Symbol...)
-            tuple((get_property(p, key) for key in keys)...)
+        @inline function Base.getindex(k::$(struct_name), keys::Symbol...)
+            tuple((getkey(k, key) for key in keys)...)
         end
 
-        @inline function Base.setindex!(p::$(struct_name), value, key::Symbol)
-            set_property!(p, key, value)
+        @inline function Base.setindex!(k::$(struct_name), value, key::Symbol)
+            setkey!(k, key, value)
         end
 
-        @inline function Base.setindex!(p::$(struct_name), values, keys::Symbol...)
+        @inline function Base.setindex!(k::$(struct_name), values, keys::Symbol...)
             if length(values) != length(keys)
                 throw(ArgumentError("Number of values (\$(length(values))) must match number of keys (\$(length(keys)))"))
             end
             for (key, val) in zip(keys, values)
-                set_property!(p, key, val)
+                setkey!(k, key, val)
             end
             values
         end
 
-        @inline function Base.values(p::$(struct_name))
+        @inline function Base.values(k::$(struct_name))
             # Note: This operation may allocate due to dynamic filtering
-            # Property bag interface operations are less performance-critical than direct property access
+            # Key-value store interface operations are less performance-critical than direct key access
             readable_set_values = Any[]
-            for name in property_names(p)
-                if is_set(p, name) && is_readable(p, name)
-                    push!(readable_set_values, get_property(p, name))
+            for name in keynames(k)
+                if isset(k, name) && is_readable(k, name)
+                    push!(readable_set_values, getkey(k, name))
                 end
             end
             tuple(readable_set_values...)
         end
 
-        @inline function Base.pairs(p::$(struct_name))
-            # Only include pairs for properties that are set and readable
+        @inline function Base.pairs(k::$(struct_name))
+            # Only include pairs for keys that are set and readable
             # Use tuple comprehension to avoid allocations
-            tuple(((name, get_property(p, name)) for name in property_names(p) if is_set(p, name) && is_readable(p, name))...)
+            tuple(((name, getkey(k, name)) for name in keynames(k) if isset(k, name) && is_readable(k, name))...)
         end
 
-        @inline function Base.iterate(p::$(struct_name))
-            # Get all readable, set properties as a tuple to avoid allocations
-            readable_set_props = tuple(((name, get_property(p, name)) for name in property_names(p) if is_set(p, name) && is_readable(p, name))...)
+        @inline function Base.iterate(k::$(struct_name))
+            # Get all readable, set keys as a tuple to avoid allocations
+            readable_set_keys = tuple(((name, getkey(k, name)) for name in keynames(k) if isset(k, name) && is_readable(k, name))...)
 
-            if isempty(readable_set_props)
+            if isempty(readable_set_keys)
                 return nothing
             end
-            return (readable_set_props[1], (readable_set_props, 2))
+            return (readable_set_keys[1], (readable_set_keys, 2))
         end
 
-        @inline function Base.iterate(p::$(struct_name), state)
-            readable_set_props, index = state
-            if index > length(readable_set_props)
+        @inline function Base.iterate(k::$(struct_name), state)
+            readable_set_keys, index = state
+            if index > length(readable_set_keys)
                 return nothing
             end
-            return (readable_set_props[index], (readable_set_props, index + 1))
+            return (readable_set_keys[index], (readable_set_keys, index + 1))
         end
 
-        @inline function Base.length(p::$(struct_name))
-            # Count only properties that are set
+        @inline function Base.length(k::$(struct_name))
+            # Count only keys that are set
             count = 0
-            for name in property_names(p)
-                if is_set(p, name)
+            for name in keynames(k)
+                if isset(k, name)
                     count += 1
                 end
             end
             count
         end
 
-        @inline function Base.get(p::$(struct_name), key::Symbol, default)
-            if is_set(p, key) && is_readable(p, key)
-                get_property(p, key)
+        @inline function Base.get(k::$(struct_name), key::Symbol, default)
+            if isset(k, key) && is_readable(k, key)
+                getkey(k, key)
             else
                 default
             end
         end
 
-        @inline function Base.isreadable(p::$(struct_name), key::Symbol)
-            is_readable(p, key)
+        @inline function Base.isreadable(k::$(struct_name), key::Symbol)
+            is_readable(k, key)
         end
 
-        @inline function Base.iswritable(p::$(struct_name), key::Symbol)
-            is_writable(p, key)
+        @inline function Base.iswritable(k::$(struct_name), key::Symbol)
+            is_writable(k, key)
         end
 
-        @inline function Base.keys(p::$(struct_name))
-            property_names(p)
+        @inline function Base.keys(k::$(struct_name))
+            keynames(k)
         end
 
-        @inline function Base.haskey(p::$(struct_name), key::Symbol)
-            key in property_names(p)
+        @inline function Base.haskey(k::$(struct_name), key::Symbol)
+            key in keynames(k)
         end
 
         # Override getproperty and setproperty! for natural dot syntax access
-        @inline function Base.getproperty(p::$(struct_name), name::Symbol)
-            # Check if it's a managed property first
-            if name in property_names(p)
-                return get_property(p, name)
+        @inline function Base.getproperty(k::$(struct_name), name::Symbol)
+            # Check if it's a managed key first
+            if name in keynames(k)
+                return getkey(k, name)
             else
                 # Fall back to default field access for internal fields (like clock)
-                return getfield(p, name)
+                return getfield(k, name)
             end
         end
 
-        @inline function Base.setproperty!(p::$(struct_name), name::Symbol, value)
-            # Check if it's a managed property first
-            if name in property_names(p)
-                return set_property!(p, name, value)
+        @inline function Base.setproperty!(k::$(struct_name), name::Symbol, value)
+            # Check if it's a managed key first
+            if name in keynames(k)
+                return setkey!(k, name, value)
             else
                 # Fall back to default field access for internal fields (like clock)
-                return setfield!(p, name, value)
+                return setfield!(k, name, value)
             end
         end
     end
@@ -991,7 +990,7 @@ macro properties(struct_name, args...)
     result = quote
         $(struct_def)
         $(metadata_functions...)
-        $(property_methods...)
+        $(key_methods...)
         $(utility_functions)
     end
 

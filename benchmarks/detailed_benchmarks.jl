@@ -3,19 +3,19 @@
 using Pkg
 Pkg.activate(".")
 using BenchmarkTools
-using ManagedProperties
+using StaticKV
 using Clocks
 
-println("🔬 Detailed Performance Analysis: Property Update Breakdown")
+println("🔬 Detailed Performance Analysis: Key Update Breakdown")
 println("=" ^ 70)
 
 # Create test types
-@properties FastSensor begin
+@kvstore FastSensor begin
     value::Float64
     quality::UInt8
 end
 
-@properties CachedSensor begin
+@kvstore CachedSensor begin
     value::Float64
     quality::UInt8
 end
@@ -38,14 +38,14 @@ print("EpochClock.time_nanos():       ")
 print("CachedEpochClock.time_nanos(): ")
 @btime Clocks.time_nanos($cached_clock)
 
-println("\n⚙️  Property Update Component Analysis")
+println("\n⚙️  Key Update Component Analysis")
 println("-" ^ 40)
 
 # Component 1: Field access and assignment (no clock)
 function field_update_only(sensor, value)
     # Simulate the field updates without clock operations
     setfield!(sensor, :value, value)
-    setfield!(sensor, :value_timestamp, 12345)  # Fixed timestamp
+    setfield!(sensor, :_value_timestamp, 12345)  # Fixed timestamp
     return value
 end
 
@@ -55,14 +55,14 @@ function clock_retrieval_only(sensor)
     return Clocks.time_nanos(clock)
 end
 
-# Component 3: Full property update
-function full_property_update(sensor, value)
-    set_property!(sensor, :value, value)
+# Component 3: Full key update
+function full_key_update(sensor, value)
+    setkey!(sensor, :value, value)
     return value
 end
 
-# Benchmark individual components of property updates
-function benchmark_property_update_components()
+# Benchmark individual components of key updates
+function benchmark_key_update_components()
     
     println("Component breakdown for EpochClock sensor:")
     print("  Field updates only (no clock):     ")
@@ -71,8 +71,8 @@ function benchmark_property_update_components()
     print("  Clock retrieval only:              ")
     @btime clock_retrieval_only($fast_sensor)
     
-    print("  Full property update:              ")
-    @btime full_property_update($fast_sensor, 42.0)
+    print("  Full key update:                   ")
+    @btime full_key_update($fast_sensor, 42.0)
     
     println("\nComponent breakdown for CachedEpochClock sensor:")
     print("  Field updates only (no clock):     ")
@@ -81,11 +81,11 @@ function benchmark_property_update_components()
     print("  Clock retrieval only:              ")
     @btime clock_retrieval_only($cached_sensor)
     
-    print("  Full property update:              ")
-    @btime full_property_update($cached_sensor, 42.0)
+    print("  Full key update:                   ")
+    @btime full_key_update($cached_sensor, 42.0)
 end
 
-benchmark_property_update_components()
+benchmark_key_update_components()
 
 println("\n🧮 Overhead Calculation")
 println("-" ^ 40)
@@ -95,11 +95,11 @@ epoch_clock_time = @belapsed Clocks.time_nanos($epoch_clock)
 cached_clock_time = @belapsed Clocks.time_nanos($cached_clock)
 field_update_time = @belapsed begin
     setfield!($fast_sensor, :value, 42.0)
-    setfield!($fast_sensor, :value_timestamp, 12345)
+    setfield!($fast_sensor, :_value_timestamp, 12345)
 end
 
-full_epoch_time = @belapsed set_property!($fast_sensor, :value, 42.0)
-full_cached_time = @belapsed set_property!($cached_sensor, :value, 42.0)
+full_epoch_time = @belapsed setkey!($fast_sensor, :value, 42.0)
+full_cached_time = @belapsed setkey!($cached_sensor, :value, 42.0)
 
 println("Time breakdown (in nanoseconds):")
 println("  Field updates:           $(round(field_update_time * 1e9, digits=2)) ns")
@@ -107,8 +107,8 @@ println("  EpochClock retrieval:    $(round(epoch_clock_time * 1e9, digits=2)) n
 println("  CachedEpochClock retr.:  $(round(cached_clock_time * 1e9, digits=2)) ns")
 println()
 println("Full operation times:")
-println("  EpochClock property update:    $(round(full_epoch_time * 1e9, digits=2)) ns")
-println("  CachedEpochClock property update: $(round(full_cached_time * 1e9, digits=2)) ns")
+println("  EpochClock key update:    $(round(full_epoch_time * 1e9, digits=2)) ns")
+println("  CachedEpochClock key update: $(round(full_cached_time * 1e9, digits=2)) ns")
 println()
 
 clock_overhead_percent = (epoch_clock_time / full_epoch_time) * 100
@@ -120,7 +120,7 @@ println("  CachedEpochClock speedup: $(round(speedup, digits=1))x faster")
 
 println("\n🎯 Analysis Summary")
 println("-" ^ 40)
-println("The major performance bottleneck in property updates is clock retrieval:")
+println("The major performance bottleneck in key updates is clock retrieval:")
 println("• EpochClock.time_nanos() takes ~$(round(epoch_clock_time * 1e9, digits=1)) ns")
 println("• CachedEpochClock.time_nanos() takes ~$(round(cached_clock_time * 1e9, digits=1)) ns")
 println("• Field updates are only ~$(round(field_update_time * 1e9, digits=1)) ns")
@@ -131,4 +131,4 @@ println("• The parametric design eliminates AbstractClock dispatch overhead")
 println("• Most of the 22ns → 2ns improvement comes from faster time retrieval")
 
 println("\n" ^ 2)
-println("✅ Clock optimization is the key to high-frequency property updates!")
+println("✅ Clock optimization is the key to high-frequency key updates!")

@@ -1,4 +1,4 @@
-name = "ManagedProperties"
+name = "StaticKV"
 uuid = "5c25fbc6-c823-4e8d-82ee-a726f35d2972"
 authors = ["Darryl Gamroth <dgamroth@rubus.ca>"]
 version = "0.4.1"
