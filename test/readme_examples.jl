@@ -57,7 +57,7 @@ function test_readme_examples()
     @test result == "JOHN Doe"  # Fixed expectation - only "JOHN" is uppercase
     @test get_keyerty(person, :name) == "JOHN"  # Original value unchanged
     
-    # Test with_key! (remember it doesn't update the property with the result)
+    # Test with_key! (remember it doesn't update the key with the result)
     # First get the current value to know what to expect
     score_before = get_keyerty(person, :score)
     # Then call with_key!
@@ -66,7 +66,7 @@ function test_readme_examples()
     end
     # The result should be 10 more than what we got from score before the call
     @test result == score_before + 10
-    # And the property value should remain unchanged
+    # And the key value should remain unchanged
     score_after = get_keyerty(person, :score)
     @test score_after == score_before
     

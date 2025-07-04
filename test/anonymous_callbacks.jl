@@ -1,4 +1,4 @@
-# Define test types with anonymous functions in property definitions
+# Define test types with anonymous functions in key definitions
 @kvstore TestAnonymousCallbacks begin
     # Anonymous function for get callback
     name::String => (
@@ -49,8 +49,8 @@ end
 
 # Export the test function so it can be called from runtests.jl
 function test_anonymous_callbacks()
-    # Test focusing only on anonymous/inline callbacks in property definitions
-    @testset "Anonymous functions in property definitions" begin
+    # Test focusing only on anonymous/inline callbacks in key definitions
+    @testset "Anonymous functions in key definitions" begin
         t = TestAnonymousCallbacks()
         
         # Test get callback with anonymous function

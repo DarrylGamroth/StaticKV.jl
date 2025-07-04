@@ -1,8 +1,8 @@
-# Test allocation behavior of property accessors
+# Test allocation behavior of key accessors
 using Test
 using StaticKV
 
-# Test struct with various property types
+# Test struct with various key types
 @kvstore AllocationTest begin
     bool_val::Bool => (value => true)
     char_val::Char => (value => 'a')
