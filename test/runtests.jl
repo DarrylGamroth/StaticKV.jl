@@ -25,6 +25,9 @@ include("dot_syntax.jl")
 
     @testset "Access Control" begin
         test_access_control()
+        test_new_access_control_modes()
+        test_base_ismutable()
+        test_legacy_compatibility()
     end
 
     @testset "Custom Callbacks" begin

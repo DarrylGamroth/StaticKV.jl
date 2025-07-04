@@ -44,7 +44,7 @@ using MacroTools
 # Export public API
 export @kvstore, AccessMode
 export getkey, setkey!, resetkey!, keytype, isset, allkeysset
-export is_readable, is_writable, last_update
+export is_readable, is_assignable, is_mutable, is_writable, last_update
 export with_key, with_key!, with_keys
 export keynames
 export Clocks
@@ -57,16 +57,26 @@ Module containing access control constants for key access.
 # Constants
 - `NONE`: No access (0x00)
 - `READABLE`: Key can be read (0x01)
-- `WRITABLE`: Key can be written (0x02)
-- `READABLE_WRITABLE`: Key can be both read and written (0x03)
+- `ASSIGNABLE`: Key can be assigned/replaced with new values (0x02)
+- `MUTABLE`: Key can be mutated in-place but not replaced (0x04)
+- `READABLE_ASSIGNABLE_MUTABLE`: Key can be read, assigned, and mutated (default) (0x07)
+
+# Legacy constants (for backward compatibility)
+- `WRITABLE`: Alias for `ASSIGNABLE` (0x02)
+- `READABLE_WRITABLE`: Alias for `READABLE_ASSIGNABLE_MUTABLE` (0x07)
 """
 module AccessMode
 const AccessModeType = UInt8
 
 const NONE::AccessModeType = 0x00
 const READABLE::AccessModeType = 0x01
-const WRITABLE::AccessModeType = 0x02
-const READABLE_WRITABLE::AccessModeType = READABLE | WRITABLE
+const ASSIGNABLE::AccessModeType = 0x02
+const MUTABLE::AccessModeType = 0x04
+const READABLE_ASSIGNABLE_MUTABLE::AccessModeType = READABLE | ASSIGNABLE | MUTABLE
+
+# Legacy aliases for backward compatibility
+const WRITABLE::AccessModeType = ASSIGNABLE
+const READABLE_WRITABLE::AccessModeType = READABLE_ASSIGNABLE_MUTABLE
 
 """
     is_readable(flags)
@@ -76,11 +86,26 @@ Check if the key has readable access based on its access flags.
 @inline is_readable(flags) = !iszero(flags & READABLE)
 
 """
+    is_assignable(flags)
+
+Check if the key has assignable access (can replace/assign new values) based on its access flags.
+"""
+@inline is_assignable(flags) = !iszero(flags & ASSIGNABLE)
+
+"""
+    is_mutable(flags)
+
+Check if the key has mutable access (can mutate in-place but not replace) based on its access flags.
+"""
+@inline is_mutable(flags) = !iszero(flags & MUTABLE)
+
+"""
     is_writable(flags)
 
-Check if the key has writable access based on its access flags.
+Legacy function: Check if the key has writable access based on its access flags.
+This is an alias for `is_assignable` for backward compatibility.
 """
-@inline is_writable(flags) = !iszero(flags & WRITABLE)
+@inline is_writable(flags) = is_assignable(flags)
 
 end # AccessMode module
 
@@ -117,7 +142,7 @@ function parse_key_def(expr)
 
     # Initialize with defaults
     result[:value] = nothing
-    result[:access] = :(StaticKV.AccessMode.READABLE_WRITABLE)
+    result[:access] = :(StaticKV.AccessMode.READABLE_ASSIGNABLE_MUTABLE)
     result[:on_get] = nothing
     result[:on_set] = nothing
 
@@ -242,7 +267,7 @@ end
         key2::Type2 => (access => AccessMode.READABLE)
         key3::Type3 => (
             value => default_value,
-            access => AccessMode.READABLE_WRITABLE,
+            access => AccessMode.READABLE_ASSIGNABLE_MUTABLE,
             on_get => custom_get_fn,
             on_set => custom_set_fn
         )
@@ -262,7 +287,7 @@ Create a struct with a static key-value store using direct field storage and com
 
 # Key attributes
 - `value`: Default value for the key
-- `access`: Access control flags (e.g., `AccessMode.READABLE_WRITABLE`)
+- `access`: Access control flags (e.g., `AccessMode.READABLE_ASSIGNABLE_MUTABLE`)
 - `on_get`: Custom function called when getting: `(obj, key, value) -> transformed_value`
 - `on_set`: Custom function called when setting: `(obj, key, value) -> transformed_value`
 
@@ -519,6 +544,11 @@ macro kvstore(struct_name, args...)
         push!(metadata_functions, quote
             @inline _is_readable(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) =
                 StaticKV.AccessMode.is_readable($(key_access[i]))
+            @inline _is_assignable(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) =
+                StaticKV.AccessMode.is_assignable($(key_access[i]))
+            @inline _is_mutable(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) =
+                StaticKV.AccessMode.is_mutable($(key_access[i]))
+            # Legacy function for backward compatibility
             @inline _is_writable(::Type{<:$(struct_name)}, ::Val{$(QuoteNode(name))}) =
                 StaticKV.AccessMode.is_writable($(key_access[i]))
         end)
@@ -567,8 +597,8 @@ macro kvstore(struct_name, args...)
             # Key-specific setkey! method
             @inline function setkey!(k::$(struct_name), ::Val{$(QuoteNode(name))}, v)
                 # Access check
-                _is_writable($(struct_name), Val($(QuoteNode(name)))) ||
-                    throw(ErrorException("Key not writable"))
+                _is_assignable($(struct_name), Val($(QuoteNode(name)))) ||
+                    throw(ErrorException("Key not assignable"))
 
                 # Compile-time callback (optimized away for defaults)
                 callback = _get_on_set($(struct_name), Val($(QuoteNode(name))))
@@ -591,6 +621,15 @@ macro kvstore(struct_name, args...)
                 _is_readable($(struct_name), Val($(QuoteNode(name))))
             end
 
+            @inline function is_assignable(k::$(struct_name), ::Val{$(QuoteNode(name))})
+                _is_assignable($(struct_name), Val($(QuoteNode(name))))
+            end
+
+            @inline function is_mutable(k::$(struct_name), ::Val{$(QuoteNode(name))})
+                _is_mutable($(struct_name), Val($(QuoteNode(name))))
+            end
+
+            # Legacy function for backward compatibility
             @inline function is_writable(k::$(struct_name), ::Val{$(QuoteNode(name))})
                 _is_writable($(struct_name), Val($(QuoteNode(name))))
             end
@@ -600,8 +639,8 @@ macro kvstore(struct_name, args...)
             end
 
             @inline function resetkey!(k::$(struct_name), ::Val{$(QuoteNode(name))})
-                _is_writable($(struct_name), Val($(QuoteNode(name)))) ||
-                    throw(ErrorException("Key not writable"))
+                _is_assignable($(struct_name), Val($(QuoteNode(name)))) ||
+                    throw(ErrorException("Key not assignable"))
                 setfield!(k, $(QuoteNode(name)), nothing)
                 setfield!(k, $(QuoteNode(timestamp_field)), -1)
                 return nothing
@@ -672,6 +711,30 @@ macro kvstore(struct_name, args...)
                 result = :(throw(ErrorException("Key not found")))
                 for name in reverse(key_names)
                     result = :(s === $(QuoteNode(name)) ? _is_writable($(struct_name), Val($(QuoteNode(name)))) : $result)
+                end
+                result
+            end)
+        end
+
+        @inline function is_assignable(k::$(struct_name), s::Symbol)
+            $(if length(key_names) == 0
+                :(throw(ErrorException("Key not found")))
+            else
+                result = :(throw(ErrorException("Key not found")))
+                for name in reverse(key_names)
+                    result = :(s === $(QuoteNode(name)) ? _is_assignable($(struct_name), Val($(QuoteNode(name)))) : $result)
+                end
+                result
+            end)
+        end
+
+        @inline function is_mutable(k::$(struct_name), s::Symbol)
+            $(if length(key_names) == 0
+                :(throw(ErrorException("Key not found")))
+            else
+                result = :(throw(ErrorException("Key not found")))
+                for name in reverse(key_names)
+                    result = :(s === $(QuoteNode(name)) ? _is_mutable($(struct_name), Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
@@ -819,8 +882,8 @@ macro kvstore(struct_name, args...)
             if !is_readable(k, s)
                 throw(ErrorException("Key :$s is not readable"))
             end
-            if !is_writable(k, s)
-                throw(ErrorException("Key :$s is not writable"))
+            if !is_mutable(k, s)
+                throw(ErrorException("Key :$s is not mutable"))
             end
 
             # Check if key type is isbits - if so, should throw error
@@ -954,6 +1017,20 @@ macro kvstore(struct_name, args...)
 
         @inline function Base.iswritable(k::$(struct_name), key::Symbol)
             is_writable(k, key)
+        end
+
+        @inline function Base.ismutable(k::$(struct_name), key::Symbol)
+            # Check if key exists and is mutable
+            if haskey(k, key)
+                is_mutable(k, key)
+            else
+                false
+            end
+        end
+
+        @inline function Base.ismutable(k::$(struct_name))
+            # The struct itself is always mutable (it's declared as mutable struct)
+            true
         end
 
         @inline function Base.keys(k::$(struct_name))

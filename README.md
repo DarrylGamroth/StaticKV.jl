@@ -41,19 +41,21 @@ using StaticKV
 # Define a type with static key-value store
 @kvstore Person begin
     name::String
-    age::Int => (access => AccessMode.READABLE_WRITABLE)
+    age::Int => (access => AccessMode.READABLE)          # Read-only access
     address::String => (
-        on_get => (obj, key, val) -> "REDACTED",  # Custom get transformation
-        on_set => (obj, key, val) -> uppercase(val)  # Custom set transformation
+        on_get => (obj, key, val) -> "REDACTED",         # Custom get transformation
+        on_set => (obj, key, val) -> uppercase(val)      # Custom set transformation
     )
     email::String => (
-        on_set => (obj, key, val) -> lowercase(val)  # Always store lowercase
+        on_set => (obj, key, val) -> lowercase(val)      # Always store lowercase
     )
     score::Int => (
         value => 0,
-        on_get => (obj, key, val) -> val * 2,      # Double when getting
-        on_set => (obj, key, val) -> max(0, val)  # Ensure non-negative
+        access => AccessMode.READABLE_ASSIGNABLE_MUTABLE, # Full access (default)
+        on_get => (obj, key, val) -> val * 2,            # Double when getting
+        on_set => (obj, key, val) -> max(0, val)         # Ensure non-negative
     )
+    data::Vector{String} => (access => AccessMode.READABLE | AccessMode.MUTABLE)  # Read and mutate, but not assign
 end
 
 # Create an instance
@@ -61,30 +63,41 @@ person = Person()
 
 # The generated struct is concrete and can be used as fields
 struct Company
-    ceo::Person              # ✅ Concrete type, no parameters!
-    employees::Vector{Person} # ✅ Works in collections too
+    ceo::Person                                          # ✅ Concrete type, no parameters!
+    employees::Vector{Person}                            # ✅ Works in collections too
 end
 
 # Set keys
 setkey!(person, :name, "Alice")
-setkey!(person, :age, 30)
 setkey!(person, :email, "alice@example.com")
 setkey!(person, :address, "123 Main St")
+setkey!(person, :data, ["item1", "item2"])
 
 # Access keys
-println(getkey(person, :name))    # "Alice"
-println(getkey(person, :address)) # "REDACTED" (get callback applied)
-println(getkey(person, :email))   # "alice@example.com" (stored lowercase)
+println(getkey(person, :name))                          # "Alice"
+println(getkey(person, :address))                       # "REDACTED" (get callback applied)
+println(getkey(person, :email))                         # "alice@example.com" (stored lowercase)
+
+# Mutate mutable keys in place
+with_key!(person, :data) do data
+    push!(data, "item3")                                 # Modify the vector in place
+end
+println(getkey(person, :data))                          # ["item1", "item2", "item3"]
 
 # Check key status
-println(isset(person, :name))          # true
+println(isset(person, :name))                           # true
+println(is_readable(person, :age))                      # true
+println(is_assignable(person, :age))                    # false (read-only)
+println(is_mutable(person, :data))                      # true (can mutate in place)
+println(ismutable(person, :data))                       # true (Base.ismutable support)
+println(ismutable(person))                              # true (struct itself is mutable)
 
 # Reset a key to unset state
 resetkey!(person, :address)
-println(isset(person, :address))       # false
-println(allkeysset(person))             # false (address key was reset)
-println(is_readable(person, :email))    # true
-println(is_writable(person, :address))  # true
+println(isset(person, :address))                        # false
+println(allkeysset(person))                             # false (address key was reset)
+println(is_readable(person, :email))                    # true
+println(is_assignable(person, :address))                # true
 ```
 
 ## Key Definition Syntax
@@ -108,6 +121,12 @@ end
 
     # Key with access control
     readonly_key::Type => (access => AccessMode.READABLE)
+    
+    # Key with assignable access (can replace but not mutate)
+    assignable_key::Type => (access => AccessMode.READABLE | AccessMode.ASSIGNABLE)
+    
+    # Key with mutable access (can mutate in-place but not replace)
+    mutable_key::Vector{String} => (access => AccessMode.READABLE | AccessMode.MUTABLE)
 
     # Key with custom callbacks
     custom_key::Type => (
@@ -118,7 +137,7 @@ end
     # Combining multiple attributes
     complex_key::Type => (
         value => initial_value,
-        access => AccessMode.READABLE_WRITABLE,
+        access => AccessMode.READABLE_ASSIGNABLE_MUTABLE, # Full access (default)
         on_get => my_get_fn,
         on_set => my_set_fn
     )
@@ -131,8 +150,37 @@ The `AccessMode` module provides flags to control key access:
 
 - `AccessMode.NONE`: No access (0x00)
 - `AccessMode.READABLE`: Key can be read (0x01)
-- `AccessMode.WRITABLE`: Key can be written (0x02)
-- `AccessMode.READABLE_WRITABLE`: Key can be both read and written (READABLE | WRITABLE)
+- `AccessMode.ASSIGNABLE`: Key can be assigned/replaced with new values (0x02)
+- `AccessMode.MUTABLE`: Key can be mutated in-place but not replaced (0x04)
+- `AccessMode.READABLE_ASSIGNABLE_MUTABLE`: Key can be read, assigned, and mutated (default) (0x07)
+
+### Legacy Access Modes (for backward compatibility)
+- `AccessMode.WRITABLE`: Alias for `ASSIGNABLE` (0x02)
+- `AccessMode.READABLE_WRITABLE`: Alias for `READABLE_ASSIGNABLE_MUTABLE` (0x07)
+
+### Access Mode Combinations
+
+You can combine access modes using bitwise OR (`|`):
+
+```julia
+# Read-only access
+readonly_mode = AccessMode.READABLE
+
+# Read and assign, but no in-place mutation
+read_assign_mode = AccessMode.READABLE | AccessMode.ASSIGNABLE
+
+# Read and mutate in-place, but no assignment of new values
+read_mutate_mode = AccessMode.READABLE | AccessMode.MUTABLE
+
+# Full access (default)
+full_access_mode = AccessMode.READABLE_ASSIGNABLE_MUTABLE
+```
+
+### Key Access Semantics
+
+- **READABLE**: Allows `getkey()`, `with_key()`, and `with_keys()` operations
+- **ASSIGNABLE**: Allows `setkey!()` to replace the entire value with a new one
+- **MUTABLE**: Allows `with_key!()` to modify the value in-place (for non-isbits types)
 
 ## Key Callbacks
 
@@ -186,13 +234,13 @@ Set callbacks are executed when `setkey!` is called and allow you to transform o
 
 ```julia
 # Simple validation example
-age_validator(obj, key, val) = max(0, min(120, val))  # Clamp age between 0-120
+age_validator(obj, key, val) = max(0, min(120, val))    # Clamp age between 0-120
 
 # Data privacy example
 card_masker(obj, key, val) = "XXXX-XXXX-XXXX-" * last(val, 4)  # Show only last 4 digits
 
 # Data transformation example
-name_normalizer(obj, key, val) = titlecase(val)  # Ensure consistent capitalization
+name_normalizer(obj, key, val) = titlecase(val)         # Ensure consistent capitalization
 
 # Using callbacks in key definition
 @kvstore Person begin
@@ -218,15 +266,15 @@ using Clocks
 end
 
 # Default: uses EpochClock (concrete type, zero overhead)
-sensor1 = Sensor()  # Type: Sensor{EpochClock}
+sensor1 = Sensor()                                       # Type: Sensor{EpochClock}
 
 # For high-frequency operations, use CachedEpochClock for even better performance
 cached_clock = Clocks.CachedEpochClock(Clocks.EpochClock())
-sensor2 = Sensor(cached_clock)  # Type: Sensor{CachedEpochClock{EpochClock}}
+sensor2 = Sensor(cached_clock)                           # Type: Sensor{CachedEpochClock{EpochClock}}
 
 # Both instances have concrete clock types for zero dispatch overhead
-println(typeof(sensor1))  # Sensor{EpochClock}
-println(typeof(sensor2))  # Sensor{CachedEpochClock{EpochClock}}
+println(typeof(sensor1))                                # Sensor{EpochClock}
+println(typeof(sensor2))                                # Sensor{CachedEpochClock{EpochClock}}
 ```
 
 ### Using Anonymous Functions for Callbacks
@@ -237,13 +285,13 @@ As seen in the `Person` example above, you can use anonymous functions for key c
 @kvstore CustomCallbacks begin
     # Anonymous function for get callback
     username::String => (
-        on_get => (obj, key, val) -> uppercase(val)  # Always show uppercase
+        on_get => (obj, key, val) -> uppercase(val)      # Always show uppercase
     )
 
     # Anonymous function for set callback
     password::String => (
-        on_get => (obj, key, val) -> "********",     # Hide actual value
-        on_set => (obj, key, val) -> hash(val)      # Store hashed value
+        on_get => (obj, key, val) -> "********",         # Hide actual value
+        on_set => (obj, key, val) -> hash(val)           # Store hashed value
     )
 
     # Data validation with callbacks
@@ -255,8 +303,8 @@ As seen in the `Person` example above, you can use anonymous functions for key c
     # Combined read/write transformations
     score::Int => (
         value => 0,
-        on_get => (obj, key, val) -> val * 2,      # Double the score when read
-        on_set => (obj, key, val) -> max(0, val)  # Ensure non-negative
+        on_get => (obj, key, val) -> val * 2,            # Double the score when read
+        on_set => (obj, key, val) -> max(0, val)         # Ensure non-negative
     )
 end
 ```
@@ -268,16 +316,22 @@ end
 result = with_key!(person, :age) do age
     age + 1
 end
-setkey!(person, :age, result)  # Need to explicitly update the key
+setkey!(person, :age, result)                           # Need to explicitly update the key
+
+# Mutate collections in place with with_key!
+with_key!(person, :data) do data_array
+    push!(data_array, "new_item")                       # Modifies the array in place
+    # Return value is ignored for in-place mutations
+end
 
 # Calculate numeric values without modifying keys
 average_score = with_keys(person, :age, :score) do age, score
-    (age + score) / 2  # Calculate average of age and score
+    (age + score) / 2                                   # Calculate average of age and score
 end
 
 # To update multiple keys, you need to get and set them individually
-name = getkey(person, :name) * " Smith"  # Add surname
-age = getkey(person, :age) + 1          # Increment age
+name = getkey(person, :name) * " Smith"                 # Add surname
+age = getkey(person, :age) + 1                          # Increment age
 setkey!(person, :name, name)
 setkey!(person, :age, age)
 ```
@@ -286,16 +340,21 @@ setkey!(person, :age, age)
 
 ```julia
 # Get key type
-println(keytype(person, :age))     # Int64
-println(keytype(person, :address)) # String
+println(keytype(person, :age))                          # Int64
+println(keytype(person, :address))                      # String
 
 # Check when a key was last updated
-last_updated = last_update(person, :name)  # Timestamp in nanoseconds
+last_updated = last_update(person, :name)               # Timestamp in nanoseconds
 
 # Check access permissions
-println(is_readable(person, :address))  # true
-println(is_writable(person, :address))  # true
-println(is_writable(person, :score))    # true
+println(is_readable(person, :address))                  # true
+println(is_assignable(person, :address))                # true  
+println(is_mutable(person, :data))                      # true (if data is a Vector)
+println(is_writable(person, :score))                    # true (legacy function)
+
+# Check mutability using Base.ismutable
+println(ismutable(person, :data))                       # true (key-specific mutability)
+println(ismutable(person))                              # true (struct is mutable)
 ```
 
 ## Full API Documentation
@@ -312,8 +371,15 @@ println(is_writable(person, :score))    # true
 ### Key Information
 
 - `is_readable(obj, key_name)`: Check if a key is readable
-- `is_writable(obj, key_name)`: Check if a key is writable
+- `is_assignable(obj, key_name)`: Check if a key can be assigned/replaced
+- `is_mutable(obj, key_name)`: Check if a key can be mutated in place
+- `is_writable(obj, key_name)`: Check if a key is writable (legacy: alias for `is_assignable`)
 - `last_update(obj, key_name)`: Get the timestamp of the last update
+
+### Base Interface Support
+
+- `Base.ismutable(obj, key_name)`: Check if a specific key is mutable (integrates with Julia's Base)
+- `Base.ismutable(obj)`: Check if the struct itself is mutable (always `true` for StaticKV structs)
 
 ### Key Operations
 
