@@ -43,16 +43,16 @@ end
 
 # Define test structs with new access modes (at top level)
 @kvstore TestNewAccess begin
-    readonly::String => (value => "read-only", access => AccessMode.READABLE)
-    assignable_only::String => (value => "initial", access => AccessMode.ASSIGNABLE)
-    mutable_only::Vector{String} => (value => ["item1"], access => AccessMode.MUTABLE)
-    read_assignable::String => (value => "both", access => AccessMode.READABLE | AccessMode.ASSIGNABLE)
-    read_mutable::Vector{String} => (value => ["initial"], access => AccessMode.READABLE | AccessMode.MUTABLE)
-    assign_mutable::Vector{String} => (value => ["initial"], access => AccessMode.ASSIGNABLE | AccessMode.MUTABLE)
-    full_access::Vector{String} => (value => ["initial"], access => AccessMode.READABLE_ASSIGNABLE_MUTABLE)
-    default_access::String => (value => "default")  # Should use READABLE_ASSIGNABLE_MUTABLE as default
-    legacy_writable::String => (value => "legacy", access => AccessMode.WRITABLE)
-    legacy_readable_writable::String => (value => "legacy2", access => AccessMode.READABLE_WRITABLE)
+    readonly::String => ("read-only"; access = AccessMode.READABLE)
+    assignable_only::String => ("initial"; access = AccessMode.ASSIGNABLE)
+    mutable_only::Vector{String} => (["item1"]; access = AccessMode.MUTABLE)
+    read_assignable::String => ("both"; access = AccessMode.READABLE | AccessMode.ASSIGNABLE)
+    read_mutable::Vector{String} => (["initial"]; access = AccessMode.READABLE | AccessMode.MUTABLE)
+    assign_mutable::Vector{String} => (["initial"]; access = AccessMode.ASSIGNABLE | AccessMode.MUTABLE)
+    full_access::Vector{String} => (["initial"]; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE)
+    default_access::String => "default"  # Should use READABLE_ASSIGNABLE_MUTABLE as default
+    legacy_writable::String => ("legacy"; access = AccessMode.ASSIGNABLE)
+    legacy_readable_writable::String => ("legacy2"; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE)
 end
 
 @kvstore TestDefaultAccess begin
@@ -61,15 +61,15 @@ end
 end
 
 @kvstore TestMutable begin
-    readonly::String => (value => "read-only", access => AccessMode.READABLE)
-    mutable_key::Vector{String} => (value => ["initial"], access => AccessMode.MUTABLE)
-    full_access::Vector{String} => (value => ["initial"], access => AccessMode.READABLE_ASSIGNABLE_MUTABLE)
-    isbits_key::Int => (value => 42, access => AccessMode.READABLE_ASSIGNABLE_MUTABLE)
+    readonly::String => ("read-only"; access = AccessMode.READABLE)
+    mutable_key::Vector{String} => (["initial"]; access = AccessMode.MUTABLE)
+    full_access::Vector{String} => (["initial"]; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE)
+    isbits_key::Int => (42; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE)
 end
 
 @kvstore TestLegacy begin
-    old_writable::String => (value => "test", access => AccessMode.WRITABLE)
-    old_readable_writable::String => (value => "test", access => AccessMode.READABLE_WRITABLE)
+    old_writable::String => ("test"; access = AccessMode.ASSIGNABLE)
+    old_readable_writable::String => ("test"; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE)
 end
 
 # Test the new access control modes

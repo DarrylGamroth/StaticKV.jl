@@ -6,11 +6,8 @@ using StaticKV
 # Define test structs at module level
 @kvstore TestDotSyntax begin
     name::String
-    age::Int => (value => 25)
-    readonly_key::String => (
-        value => "readonly", 
-        access => AccessMode.READABLE
-    )
+    age::Int => 25
+    readonly_key::String => ("readonly"; access = AccessMode.READABLE)
 end
 
 function test_dot_syntax()

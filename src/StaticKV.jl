@@ -19,10 +19,10 @@ using StaticKV
 
 @kvstore Person begin
     name::String
-    age::Int => (access => AccessMode.READABLE)
-    email::String => (
-        on_get => (obj, key, val) -> "***@***.com",
-        on_set => (obj, key, val) -> lowercase(val)
+    age::Int => (; access = AccessMode.READABLE)
+    email::String => (""; 
+        on_get = (obj, key, val) -> "***@***.com",
+        on_set = (obj, key, val) -> lowercase(val)
     )
 end
 
@@ -32,8 +32,8 @@ println(person[:name])         # "Alice"
 
 # Can be used as concrete field types
 struct Company
-    ceo::Person{Clocks.EpochClock}
-    employees::Vector{Person{Clocks.EpochClock}}
+    ceo::Person
+    employees::Vector{Person}
 end
 ```
 """
@@ -185,10 +185,10 @@ function parse_key_def(expr)
         return result
     end
 
-    # Handle pair syntax: name::Type => (attributes...)
+    # Handle new syntax: name::Type => value or name::Type => (value; kwargs...)
     if clean_expr.head == :call && length(clean_expr.args) >= 3 && clean_expr.args[1] == :(=>)
         type_expr = clean_expr.args[2]
-        attrs_expr = clean_expr.args[3]
+        value_expr = clean_expr.args[3]
 
         if !(type_expr isa Expr) || type_expr.head != :(::)
             throw(ErrorException("Expected name::type on left side of =>, got: $type_expr"))
@@ -213,64 +213,111 @@ function parse_key_def(expr)
             throw(ErrorException("Union types are not allowed in key definitions as they conflict with the internal representation of unset keys"))
         end
 
-        # Parse attributes
-        if attrs_expr isa Expr
-            if attrs_expr.head == :call && length(attrs_expr.args) >= 3 && attrs_expr.args[1] == :(=>)
-                # Single key-value attribute
-                key = attrs_expr.args[2]
-                value = attrs_expr.args[3]
-
-                # Key must be a symbol or convertible to one
-                if key isa Symbol
-                    process_attribute!(result, key, value)
-                else
-                    throw(ErrorException("Attribute key must be a symbol, got: $(typeof(key))"))
-                end
-            elseif attrs_expr.head == :tuple
-                # Multiple attributes in a tuple
-                for attr in attrs_expr.args
-                    if attr isa LineNumberNode
-                        continue
-                    end
-
-                    if attr isa Expr && attr.head == :call && length(attr.args) >= 3 && attr.args[1] == :(=>)
-                        key = attr.args[2]
-                        value = attr.args[3]
-
-                        # Key must be a symbol or convertible to one
-                        if key isa Symbol
-                            process_attribute!(result, key, value)
-                        else
-                            throw(ErrorException("Attribute key must be a symbol, got: $(typeof(key))"))
+        # Parse the value and keyword arguments
+        if value_expr isa Expr
+            if value_expr.head == :tuple
+                # Handle (value; kwargs...) or (; kwargs...)
+                args = value_expr.args
+                
+                # Separate parameters (keyword arguments) from regular arguments
+                parameters = nothing
+                value_args = []
+                
+                for arg in args
+                    if arg isa Expr && arg.head == :parameters
+                        parameters = arg
+                        # Handle keyword arguments: (; access = ..., on_get = ...)
+                        for kw in arg.args
+                            if kw isa Expr && kw.head == :kw
+                                key = kw.args[1]
+                                value = kw.args[2]
+                                process_attribute!(result, key, value)
+                            else
+                                throw(ErrorException("Expected keyword argument, got: $kw"))
+                            end
                         end
-                    else
-                        throw(ErrorException("Expected key => value pair in attributes, got: $attr"))
+                    elseif !(arg isa LineNumberNode)
+                        # Regular value argument (not a keyword parameter or line number)
+                        push!(value_args, arg)
                     end
+                end
+                
+                # Set the value based on what we found
+                if !isnothing(parameters)
+                    # We have keyword arguments, so extract only the value part
+                    if length(value_args) == 0
+                        # No value specified: (; access = ...)
+                        result[:value] = nothing
+                    elseif length(value_args) == 1
+                        # Single value: (value; access = ...)
+                        result[:value] = value_args[1]
+                    else
+                        # Multiple values form a tuple: (a, b; access = ...)
+                        result[:value] = Expr(:tuple, value_args...)
+                    end
+                else
+                    # No parameters, so this is just a tuple value: (a, b, c)
+                    result[:value] = value_expr
+                end
+            elseif value_expr.head == :parameters
+                # Handle (; kwargs...) with no value
+                for kw in value_expr.args
+                    if kw isa Expr && kw.head == :kw
+                        key = kw.args[1]
+                        value = kw.args[2]
+                        process_attribute!(result, key, value)
+                    else
+                        throw(ErrorException("Expected keyword argument, got: $kw"))
+                    end
+                end
+            elseif value_expr.head == :block
+                # Handle Julia's block syntax: ("value"; access = ...)
+                # This is how Julia parses (value; kwargs...) - as a block with parameters
+                block_args = value_expr.args
+                value_found = false
+                
+                for arg in block_args
+                    if arg isa LineNumberNode
+                        continue  # Skip line number nodes
+                    elseif arg isa Expr && arg.head == :(=)
+                        # This is a keyword argument: access = value
+                        key = arg.args[1]
+                        value = arg.args[2]
+                        process_attribute!(result, key, value)
+                    elseif !value_found
+                        # This should be the value part
+                        result[:value] = arg
+                        value_found = true
+                    else
+                        throw(ErrorException("Unexpected expression in block: $arg"))
+                    end
+                end
+                
+                if !value_found
+                    result[:value] = nothing
                 end
             else
-                throw(ErrorException("Expected attributes as tuple or pair, got: $attrs_expr"))
+                # Single value without parentheses: name::Type => value
+                result[:value] = value_expr
             end
         else
-            throw(ErrorException("Expected attributes expression, got: $(typeof(attrs_expr))"))
+            # Simple value: name::Type => value
+            result[:value] = value_expr
         end
 
         return result
     end
 
     # If we reach here, the expression didn't match any of our expected patterns
-    throw(ErrorException("Expected key definition (name::Type or name::Type => attrs), got expression with head: $(clean_expr.head)"))
+    throw(ErrorException("Expected key definition (name::Type or name::Type => value), got expression with head: $(clean_expr.head)"))
 end
 
 """
     @kvstore struct_name [clock_type=ClockType] [default_on_get=fn] [default_on_set=fn] begin
         key1::Type1
-        key2::Type2 => (access => AccessMode.READABLE)
-        key3::Type3 => (
-            value => default_value,
-            access => AccessMode.READABLE_ASSIGNABLE_MUTABLE,
-            on_get => custom_get_fn,
-            on_set => custom_set_fn
-        )
+        key2::Type2 => default_value
+        key3::Type3 => (default_value; access = AccessMode.READABLE)
+        key4::Type4 => (; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE, on_get = custom_get_fn)
     end
 
 Create a struct with a static key-value store using direct field storage and compile-time metadata.
@@ -283,10 +330,11 @@ Create a struct with a static key-value store using direct field storage and com
 
 # Key definition formats
 - `name::Type`: Simple key with type
-- `name::Type => (attribute => value, ...)`: Key with custom attributes
+- `name::Type => value`: Key with default value
+- `name::Type => (value; kwargs...)`: Key with default value and keyword arguments
+- `name::Type => (; kwargs...)`: Key with only keyword arguments
 
-# Key attributes
-- `value`: Default value for the key
+# Key keyword arguments
 - `access`: Access control flags (e.g., `AccessMode.READABLE_ASSIGNABLE_MUTABLE`)
 - `on_get`: Custom function called when getting: `(obj, key, value) -> transformed_value`
 - `on_set`: Custom function called when setting: `(obj, key, value) -> transformed_value`
@@ -301,26 +349,20 @@ Create a struct with a static key-value store using direct field storage and com
 # Basic usage with default EpochClock
 @kvstore Person begin
     name::String
+    age::Int => 25
+    data::Vector{String} => (["initial"]; access = AccessMode.READABLE | AccessMode.MUTABLE)
 end
 
 # Using CachedEpochClock for better performance
 @kvstore Person clock_type=Clocks.CachedEpochClock begin
     name::String
-    age::Int
+    age::Int => (18; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE)
 end
 
-# With default callbacks
-@kvstore Person default_on_get=my_get_fn default_on_set=my_set_fn begin
-    name::String
-end
-
-# Using field generator macros
-@kvstore Config begin
-    name::String
-
-    # Field generator macros are expanded during compilation
-    @generate_timestamp_fields
-    @generate_counter_fields request response
+# With callbacks
+@kvstore Person begin
+    name::String => (""; on_set = (obj, key, val) -> titlecase(val))
+    password::String => (; on_get = (obj, key, val) -> "***")
 end
 ```
 """

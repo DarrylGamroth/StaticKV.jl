@@ -1,11 +1,11 @@
 # Top-level test types for this file
 @kvstore MutableTest begin
-    arr::Vector{Int} => (value => [1,2,3])
+    arr::Vector{Int} => [1,2,3]
 end
 
 @kvstore MultiMutableTest begin
-    a::Vector{Int} => (value => [1])
-    b::Vector{Int} => (value => [2])
+    a::Vector{Int} => [1]
+    b::Vector{Int} => [2]
 end
 
 function test_key_value_basics()

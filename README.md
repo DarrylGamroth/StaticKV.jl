@@ -41,21 +41,20 @@ using StaticKV
 # Define a type with static key-value store
 @kvstore Person begin
     name::String
-    age::Int => (access => AccessMode.READABLE)          # Read-only access
-    address::String => (
-        on_get => (obj, key, val) -> "REDACTED",         # Custom get transformation
-        on_set => (obj, key, val) -> uppercase(val)      # Custom set transformation
+    age::Int => (; access = AccessMode.READABLE)          # Read-only access
+    address::String => (; 
+        on_get = (obj, key, val) -> "REDACTED",          # Custom get transformation
+        on_set = (obj, key, val) -> uppercase(val)       # Custom set transformation
     )
-    email::String => (
-        on_set => (obj, key, val) -> lowercase(val)      # Always store lowercase
+    email::String => (; 
+        on_set = (obj, key, val) -> lowercase(val)       # Always store lowercase
     )
-    score::Int => (
-        value => 0,
-        access => AccessMode.READABLE_ASSIGNABLE_MUTABLE, # Full access (default)
-        on_get => (obj, key, val) -> val * 2,            # Double when getting
-        on_set => (obj, key, val) -> max(0, val)         # Ensure non-negative
+    score::Int => (0; 
+        access = AccessMode.READABLE_ASSIGNABLE_MUTABLE,  # Full access (default)
+        on_get = (obj, key, val) -> val * 2,             # Double when getting
+        on_set = (obj, key, val) -> max(0, val)          # Ensure non-negative
     )
-    data::Vector{String} => (access => AccessMode.READABLE | AccessMode.MUTABLE)  # Read and mutate, but not assign
+    data::Vector{String} => ([]; access = AccessMode.READABLE | AccessMode.MUTABLE)  # Read and mutate, but not assign
 end
 
 # Create an instance
@@ -117,29 +116,28 @@ end
     basic_key::Type
 
     # Key with initial value
-    with_value::Type => (value => initial_value)
+    with_value::Type => (initial_value)
 
     # Key with access control
-    readonly_key::Type => (access => AccessMode.READABLE)
+    readonly_key::Type => (; access = AccessMode.READABLE)
     
     # Key with assignable access (can replace but not mutate)
-    assignable_key::Type => (access => AccessMode.READABLE | AccessMode.ASSIGNABLE)
+    assignable_key::Type => (; access = AccessMode.READABLE | AccessMode.ASSIGNABLE)
     
     # Key with mutable access (can mutate in-place but not replace)
-    mutable_key::Vector{String} => (access => AccessMode.READABLE | AccessMode.MUTABLE)
+    mutable_key::Vector{String} => ([]; access = AccessMode.READABLE | AccessMode.MUTABLE)
 
     # Key with custom callbacks
-    custom_key::Type => (
-        on_get => transform_for_getting(obj, key, val),
-        on_set => transform_for_setting(obj, key, val)
+    custom_key::Type => (; 
+        on_get = (obj, key, val) -> transform_for_getting(obj, key, val),
+        on_set = (obj, key, val) -> transform_for_setting(obj, key, val)
     )
 
     # Combining multiple attributes
-    complex_key::Type => (
-        value => initial_value,
-        access => AccessMode.READABLE_ASSIGNABLE_MUTABLE, # Full access (default)
-        on_get => my_get_fn,
-        on_set => my_set_fn
+    complex_key::Type => (initial_value; 
+        access = AccessMode.READABLE_ASSIGNABLE_MUTABLE, # Full access (default)
+        on_get = my_get_fn,
+        on_set = my_set_fn
     )
 end
 ```
@@ -244,9 +242,9 @@ name_normalizer(obj, key, val) = titlecase(val)         # Ensure consistent capi
 
 # Using callbacks in key definition
 @kvstore Person begin
-    name::String => (on_set => name_normalizer)
-    age::Int => (on_set => age_validator)
-    credit_card::String => (on_get => card_masker)
+    name::String => (; on_set = name_normalizer)
+    age::Int => (; on_set = age_validator)
+    credit_card::String => (; on_get = card_masker)
 end
 ```
 
@@ -284,27 +282,25 @@ As seen in the `Person` example above, you can use anonymous functions for key c
 ```julia
 @kvstore CustomCallbacks begin
     # Anonymous function for get callback
-    username::String => (
-        on_get => (obj, key, val) -> uppercase(val)      # Always show uppercase
+    username::String => (; 
+        on_get = (obj, key, val) -> uppercase(val)      # Always show uppercase
     )
 
     # Anonymous function for set callback
-    password::String => (
-        on_get => (obj, key, val) -> "********",         # Hide actual value
-        on_set => (obj, key, val) -> hash(val)           # Store hashed value
+    password::String => (; 
+        on_get = (obj, key, val) -> "********",         # Hide actual value
+        on_set = (obj, key, val) -> hash(val)           # Store hashed value
     )
 
     # Data validation with callbacks
-    age::Int => (
-        value => 18,
-        on_set => (obj, key, val) -> max(0, min(120, val))  # Clamp between 0-120
+    age::Int => (18; 
+        on_set = (obj, key, val) -> max(0, min(120, val))  # Clamp between 0-120
     )
 
     # Combined read/write transformations
-    score::Int => (
-        value => 0,
-        on_get => (obj, key, val) -> val * 2,            # Double the score when read
-        on_set => (obj, key, val) -> max(0, val)         # Ensure non-negative
+    score::Int => (0; 
+        on_get = (obj, key, val) -> val * 2,            # Double the score when read
+        on_set = (obj, key, val) -> max(0, val)         # Ensure non-negative
     )
 end
 ```

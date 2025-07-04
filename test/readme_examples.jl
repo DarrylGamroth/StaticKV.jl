@@ -5,26 +5,21 @@
 # Test basic functionality with anonymous function callbacks as shown in the README
 @kvstore ReadmePerson begin
     # Anonymous function for get callback
-    name::String => (
-        on_get => (obj, key, val) -> uppercase(val)
-    )
+    name::String => (; on_get = (obj, key, val) -> uppercase(val))
     
     # Anonymous function for set callback
-    email::String => (
-        on_set => (obj, key, val) -> lowercase(val)
-    )
+    email::String => (; on_set = (obj, key, val) -> lowercase(val))
     
     # Both read and set callbacks
-    score::Int => (
-        value => 10,
-        on_get => (obj, key, val) -> val * 2,
-        on_set => (obj, key, val) -> max(0, val)  # Ensure non-negative
+    score::Int => (10; 
+        on_get = (obj, key, val) -> val * 2,
+        on_set = (obj, key, val) -> max(0, val)  # Ensure non-negative
     )
 end
 
 # Container for testing mutable properties
 @kvstore ReadmeContainer begin
-    items::Vector{String} => (value => String[])
+    items::Vector{String} => String[]
 end
 
 function test_readme_examples()

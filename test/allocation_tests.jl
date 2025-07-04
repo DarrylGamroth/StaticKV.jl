@@ -4,28 +4,28 @@ using StaticKV
 
 # Test struct with various key types
 @kvstore AllocationTest begin
-    bool_val::Bool => (value => true)
-    char_val::Char => (value => 'a')
-    complex64_val::ComplexF32 => (value => ComplexF32(1, 2))
-    complex128_val::ComplexF64 => (value => ComplexF64(3, 4))
-    float16_val::Float16 => (value => Float16(1.5))
-    float32_val::Float32 => (value => Float32(2.5))
-    float_val::Float64 => (value => 3.14)
-    int8_val::Int8 => (value => Int8(1))
-    int16_val::Int16 => (value => Int16(3))
-    int32_val::Int32 => (value => Int32(5))
-    int64_val::Int64 => (value => Int64(7))
-    int128_val::Int128 => (value => Int128(9))
-    int_val::Int => (value => 42)
-    matrix_val::Matrix{Float64} => (value => [1.0 2.0; 3.0 4.0])
-    string_val::String => (value => "test_string")
-    symbol_val::Symbol => (value => :test_symbol)
-    uint8_val::UInt8 => (value => UInt8(2))
-    uint16_val::UInt16 => (value => UInt16(4))
-    uint32_val::UInt32 => (value => UInt32(6))
-    uint64_val::UInt64 => (value => UInt64(8))
-    uint128_val::UInt128 => (value => UInt128(10))
-    vector_val::Vector{Int} => (value => [1, 2, 3])
+    bool_val::Bool => true
+    char_val::Char => 'a'
+    complex64_val::ComplexF32 => ComplexF32(1, 2)
+    complex128_val::ComplexF64 => ComplexF64(3, 4)
+    float16_val::Float16 => Float16(1.5)
+    float32_val::Float32 => Float32(2.5)
+    float_val::Float64 => 3.14
+    int8_val::Int8 => Int8(1)
+    int16_val::Int16 => Int16(3)
+    int32_val::Int32 => Int32(5)
+    int64_val::Int64 => Int64(7)
+    int128_val::Int128 => Int128(9)
+    int_val::Int => 42
+    matrix_val::Matrix{Float64} => [1.0 2.0; 3.0 4.0]
+    string_val::String => "test_string"
+    symbol_val::Symbol => :test_symbol
+    uint8_val::UInt8 => UInt8(2)
+    uint16_val::UInt16 => UInt16(4)
+    uint32_val::UInt32 => UInt32(6)
+    uint64_val::UInt64 => UInt64(8)
+    uint128_val::UInt128 => UInt128(10)
+    vector_val::Vector{Int} => [1, 2, 3]
 end
 
 # Callback functions defined at module level
@@ -34,14 +34,8 @@ stringify_callback(obj, key, val::T) where {T} = string(val)
 
 # Test struct with custom callbacks
 @kvstore CallbackTest begin
-    int_val::Int => (
-        value => 42,
-        on_get => inc_callback
-    )
-    any_val::Any => (
-        value => "test",
-        on_get => stringify_callback
-    )
+    int_val::Int => (42; on_get = inc_callback)
+    any_val::Any => ("test"; on_get = stringify_callback)
 end
 
 function test_allocations()

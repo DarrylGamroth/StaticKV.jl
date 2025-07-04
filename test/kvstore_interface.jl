@@ -4,13 +4,12 @@ using Test
 # Define the test type at the top level
 @kvstore TestBag begin
     string_key::String
-    int_key::Int => (value => 42, access => AccessMode.READABLE_WRITABLE)
-    read_only::Float64 => (value => 3.14, access => AccessMode.READABLE)
-    write_only::Symbol => (access => AccessMode.WRITABLE)
-    custom_read::String => (
-        value => "original",
-        access => AccessMode.READABLE_WRITABLE,
-        on_get => (obj, key, val) -> "READ: $(val)"
+    int_key::Int => (42; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE)
+    read_only::Float64 => (3.14; access = AccessMode.READABLE)
+    write_only::Symbol => (; access = AccessMode.ASSIGNABLE)
+    custom_read::String => ("original"; 
+        access = AccessMode.READABLE_ASSIGNABLE_MUTABLE,
+        on_get = (obj, key, val) -> "READ: $(val)"
     )
 end
 

@@ -1,27 +1,19 @@
 # Define test types with anonymous functions in key definitions
 @kvstore TestAnonymousCallbacks begin
     # Anonymous function for get callback
-    name::String => (
-        value => "default",
-        on_get => (obj, key, val) -> uppercase(val)
-    )
+    name::String => ("default"; on_get = (obj, key, val) -> uppercase(val))
     
     # Anonymous function for set callback
-    email::String => (
-        on_set => (obj, key, val) -> lowercase(val)
-    )
+    email::String => (; on_set = (obj, key, val) -> lowercase(val))
     
     # Both read and set callbacks as anonymous functions
-    score::Int => (
-        value => 10,
-        on_get => (obj, key, val) -> val * 2,
-        on_set => (obj, key, val) -> max(0, val)  # Ensure non-negative
+    score::Int => (10; 
+        on_get = (obj, key, val) -> val * 2,
+        on_set = (obj, key, val) -> max(0, val)  # Ensure non-negative
     )
     
     # Using anonymous functions with more complex logic
-    status::Symbol => (
-        value => :active,
-        on_set => (obj, key, val) -> begin
+    status::Symbol => (:active; on_set = (obj, key, val) -> begin
             # Multi-line anonymous function with conditionals
             if val == :pending || val == :active || val == :inactive
                 return val
@@ -29,7 +21,7 @@
                 return :invalid
             end
         end,
-        on_get => (obj, key, val) -> begin
+        on_get = (obj, key, val) -> begin
             # Multi-line anonymous function for formatting
             if val == :active
                 return :ACTIVE
@@ -44,7 +36,7 @@ end
 
 # Container for testing mutable properties with anonymous functions
 @kvstore MutableContainer begin
-    items::Vector{String} => (value => String[])
+    items::Vector{String} => String[]
 end
 
 # Export the test function so it can be called from runtests.jl

@@ -21,14 +21,14 @@ macro generate_data_uri_fields()
             stream_field = Symbol("DataStreamID$(idx)")
 
             # Create clean expressions directly
-            uri_expr = :($(uri_field)::String => (value => $(value)))
+            uri_expr = :($(uri_field)::String => ($(value)))
             push!(fields, uri_expr)
 
             # Add corresponding stream ID field if it exists
             stream_key = "SUB_DATA_STREAM_$(idx)"
             if haskey(ENV, stream_key)
                 stream_value = parse(Int, ENV[stream_key])
-                stream_expr = :($(stream_field)::Int64 => (value => $(stream_value)))
+                stream_expr = :($(stream_field)::Int64 => ($(stream_value)))
                 push!(fields, stream_expr)
             end
         end
@@ -44,7 +44,7 @@ macro generate_timestamp_fields(prefix="")
     fields = [
         :($(Symbol("$(prefix_sym)created_at"))::Int64),
         :($(Symbol("$(prefix_sym)updated_at"))::Int64),
-        :($(Symbol("$(prefix_sym)version"))::UInt32 => (value => 0x00000001))
+        :($(Symbol("$(prefix_sym)version"))::UInt32 => (0x00000001))
     ]
     
     return Expr(:block, fields...)
@@ -57,8 +57,8 @@ macro generate_counter_fields(types...)
         counter_field = Symbol("$(type_name)_count")
         rate_field = Symbol("$(type_name)_rate")
         
-        push!(fields, :($(counter_field)::UInt64 => (value => 0x0000000000000000)))
-        push!(fields, :($(rate_field)::Float64 => (value => 0.0)))
+        push!(fields, :($(counter_field)::UInt64 => (0x0000000000000000)))
+        push!(fields, :($(rate_field)::Float64 => (0.0)))
     end
     
     return Expr(:block, fields...)
@@ -66,22 +66,56 @@ end
 
 # Define a macro that generates fields with different access modes and callbacks
 macro generate_secured_fields()
-    quote
-        username::String => (
-            value => "default_user",
-            access => AccessMode.READABLE
+    # Build expressions manually using a completely explicit form without any quotes
+    # to avoid Julia's expression transformations
+    
+    # Create the block expression that will contain all field definitions
+    block = Expr(:block)
+    
+    # Create username field with default value and access mode
+    # Create a call to => operator
+    username_expr = Expr(:call, :(=>), 
+        :(username::String), 
+        # Create a call expression for the tuple with semicolon
+        Expr(:tuple, 
+            # Default value
+            "default_user",
+            # Semicolon 
+            Expr(:parameters, 
+                # Access keyword argument
+                Expr(:kw, :access, :(AccessMode.READABLE))
+            )
         )
-        
-        password::String => (
-            access => AccessMode.READABLE_WRITABLE,
-            on_get => (obj, prop, val) -> "********"
+    )
+    push!(block.args, username_expr)
+    
+    # Create password field with only access mode and callback
+    password_expr = Expr(:call, :(=>),
+        :(password::String),
+        # Empty value with keywords
+        Expr(:tuple,
+            Expr(:parameters,
+                Expr(:kw, :access, :(AccessMode.READABLE_ASSIGNABLE_MUTABLE)),
+                Expr(:kw, :on_get, :(function(obj, prop, val) "********" end))
+            )
         )
-        
-        email::String => (
-            access => AccessMode.READABLE_WRITABLE,
-            on_set => (obj, prop, val) -> lowercase(val)
+    )
+    push!(block.args, password_expr)
+    
+    # Create email field with access mode and callback
+    email_expr = Expr(:call, :(=>),
+        :(email::String),
+        # Empty value with keywords
+        Expr(:tuple,
+            Expr(:parameters,
+                Expr(:kw, :access, :(AccessMode.READABLE_ASSIGNABLE_MUTABLE)),
+                Expr(:kw, :on_set, :(function(obj, prop, val) lowercase(val) end))
+            )
         )
-    end
+    )
+    push!(block.args, email_expr)
+    
+    return block
 end
 
 # Define a macro that composes several field generator macros
@@ -113,24 +147,24 @@ end
 
 # Define structs at module level
 @kvstore ConfigStruct begin
-    name::String => (value => "config1")
+    name::String => ("config1")
     @generate_data_uri_fields
     @generate_timestamp_fields
     @generate_counter_fields message packet event
 end
 
 @kvstore ComplexStruct begin
-    id::String => (value => "complex-1")
+    id::String => ("complex-1")
     
     # Use the combined fields macro
     @generate_combined_fields
     
     # Add one more directly
-    extra::Bool => (value => true)
+    extra::Bool => (true)
 end
 
 @kvstore SecuredUser begin
-    id::String => (value => "user-1")
+    id::String => ("user-1")
     @generate_secured_fields
 end
 
