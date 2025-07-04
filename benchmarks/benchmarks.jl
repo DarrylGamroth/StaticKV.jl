@@ -29,9 +29,9 @@ println("=" ^ 50)
 end
 
 @kvstore CallbackSensor begin
-    value::Float64 => (
-        on_get => (obj, key, val) -> val * 2.0,
-        on_set => (obj, key, val) -> max(0.0, val)
+    value::Float64 => (;
+        on_get = (obj, key, val) -> val * 2.0,
+        on_set = (obj, key, val) -> max(0.0, val)
     )
     quality::UInt8
 end
