@@ -24,8 +24,8 @@ function test_dot_syntax()
             @test obj.name == "Alice"
             
             # Test consistency with function calls
-            @test obj.name == getkey(obj, :name)
-            setkey!(obj, :age, 30)
+            @test obj.name == getindex(obj, :name)
+            setindex!(obj, :age, 30)
             @test obj.age == 30
         end
 

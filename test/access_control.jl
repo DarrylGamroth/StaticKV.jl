@@ -5,36 +5,36 @@ function test_access_control()
     # Test readable key
     @test is_readable(t, :readable) == true
     @test is_writable(t, :readable) == false
-    @test getkey(t, :readable) == "read-only"
-    @test_throws ErrorException setkey!(t, :readable, "new value")
-    @test_throws ErrorException resetkey!(t, :readable)  # Can't reset read-only key
+    @test getindex(t, :readable) == "read-only"
+    @test_throws ErrorException setindex!(t, :readable, "new value")
+    @test_throws ErrorException resetindex!(t, :readable)  # Can't reset read-only key
     
     # Test writable key
     @test is_readable(t, :writable) == false
     @test is_writable(t, :writable) == true
-    @test_throws ErrorException getkey(t, :writable)
-    @test setkey!(t, :writable, "new value") == "new value"
-    @test resetkey!(t, :writable) === nothing  # Can reset writable key
+    @test_throws ErrorException getindex(t, :writable)
+    @test setindex!(t, :writable, "new value") == "new value"
+    @test resetindex!(t, :writable) === nothing  # Can reset writable key
     @test isset(t, :writable) == false  # Now it should be unset
-    setkey!(t, :writable, "restored")  # Restore for later tests
+    setindex!(t, :writable, "restored")  # Restore for later tests
     
     # Test read-write key
     @test is_readable(t, :readwrite) == true
     @test is_writable(t, :readwrite) == true
-    @test getkey(t, :readwrite) == "both"
-    @test setkey!(t, :readwrite, "new value") == "new value"
-    @test getkey(t, :readwrite) == "new value"
-    @test resetkey!(t, :readwrite) === nothing  # Can reset read-write key
+    @test getindex(t, :readwrite) == "both"
+    @test setindex!(t, :readwrite, "new value") == "new value"
+    @test getindex(t, :readwrite) == "new value"
+    @test resetindex!(t, :readwrite) === nothing  # Can reset read-write key
     @test isset(t, :readwrite) == false  # Now it should be unset
-    @test_throws ErrorException getkey(t, :readwrite)  # Can't get unset key
-    setkey!(t, :readwrite, "restored")  # Restore for later tests
+    @test_throws ErrorException getindex(t, :readwrite)  # Can't get unset key
+    setindex!(t, :readwrite, "restored")  # Restore for later tests
     
     # Test no-access key
     @test is_readable(t, :none) == false
     @test is_writable(t, :none) == false
-    @test_throws ErrorException getkey(t, :none)
-    @test_throws ErrorException setkey!(t, :none, "new value")
-    @test_throws ErrorException resetkey!(t, :none)  # Can't reset no-access key
+    @test_throws ErrorException getindex(t, :none)
+    @test_throws ErrorException setindex!(t, :none, "new value")
+    @test_throws ErrorException resetindex!(t, :none)  # Can't reset no-access key
     
     # Test isset still works for non-readable keys
     @test isset(t, :writable) == true
@@ -82,26 +82,26 @@ function test_new_access_control_modes()
     @test is_assignable(t, :readonly) == false
     @test is_mutable(t, :readonly) == false
     @test is_writable(t, :readonly) == false  # Legacy function should map to assignable
-    @test getkey(t, :readonly) == "read-only"
-    @test_throws ErrorException setkey!(t, :readonly, "new")
-    @test_throws ErrorException resetkey!(t, :readonly)
+    @test getindex(t, :readonly) == "read-only"
+    @test_throws ErrorException setindex!(t, :readonly, "new")
+    @test_throws ErrorException resetindex!(t, :readonly)
 
     # Test ASSIGNABLE only
     @test is_readable(t, :assignable_only) == false
     @test is_assignable(t, :assignable_only) == true
     @test is_mutable(t, :assignable_only) == false
     @test is_writable(t, :assignable_only) == true  # Legacy function should work
-    @test_throws ErrorException getkey(t, :assignable_only)
-    @test setkey!(t, :assignable_only, "new value") == "new value"
-    @test resetkey!(t, :assignable_only) === nothing
+    @test_throws ErrorException getindex(t, :assignable_only)
+    @test setindex!(t, :assignable_only, "new value") == "new value"
+    @test resetindex!(t, :assignable_only) === nothing
 
     # Test MUTABLE only
     @test is_readable(t, :mutable_only) == false
     @test is_assignable(t, :mutable_only) == false
     @test is_mutable(t, :mutable_only) == true
     @test is_writable(t, :mutable_only) == false  # Should be false for mutable-only
-    @test_throws ErrorException getkey(t, :mutable_only)
-    @test_throws ErrorException setkey!(t, :mutable_only, ["new"])
+    @test_throws ErrorException getindex(t, :mutable_only)
+    @test_throws ErrorException setindex!(t, :mutable_only, ["new"])
     @test_throws ErrorException with_key!(v -> push!(v, "new"), t, :mutable_only)  # Can't read to mutate
 
     # Test READABLE | ASSIGNABLE
@@ -109,29 +109,29 @@ function test_new_access_control_modes()
     @test is_assignable(t, :read_assignable) == true
     @test is_mutable(t, :read_assignable) == false
     @test is_writable(t, :read_assignable) == true
-    @test getkey(t, :read_assignable) == "both"
-    @test setkey!(t, :read_assignable, "new") == "new"
-    @test getkey(t, :read_assignable) == "new"
-    @test resetkey!(t, :read_assignable) === nothing
+    @test getindex(t, :read_assignable) == "both"
+    @test setindex!(t, :read_assignable, "new") == "new"
+    @test getindex(t, :read_assignable) == "new"
+    @test resetindex!(t, :read_assignable) === nothing
 
     # Test READABLE | MUTABLE
     @test is_readable(t, :read_mutable) == true
     @test is_assignable(t, :read_mutable) == false
     @test is_mutable(t, :read_mutable) == true
     @test is_writable(t, :read_mutable) == false
-    @test getkey(t, :read_mutable) == ["initial"]
-    @test_throws ErrorException setkey!(t, :read_mutable, ["new"])
+    @test getindex(t, :read_mutable) == ["initial"]
+    @test_throws ErrorException setindex!(t, :read_mutable, ["new"])
     result = with_key!(v -> push!(v, "mutated"), t, :read_mutable)  # Should work for in-place mutation
     @test length(result) == 2  # push! returns the array, which now has 2 elements
-    @test getkey(t, :read_mutable) == ["initial", "mutated"]
+    @test getindex(t, :read_mutable) == ["initial", "mutated"]
 
     # Test ASSIGNABLE | MUTABLE
     @test is_readable(t, :assign_mutable) == false
     @test is_assignable(t, :assign_mutable) == true
     @test is_mutable(t, :assign_mutable) == true
     @test is_writable(t, :assign_mutable) == true
-    @test_throws ErrorException getkey(t, :assign_mutable)
-    @test setkey!(t, :assign_mutable, ["replaced"]) == ["replaced"]
+    @test_throws ErrorException getindex(t, :assign_mutable)
+    @test setindex!(t, :assign_mutable, ["replaced"]) == ["replaced"]
     @test_throws ErrorException with_key!(v -> push!(v, "mutated"), t, :assign_mutable)  # Can't read
 
     # Test full access (READABLE_ASSIGNABLE_MUTABLE)
@@ -139,21 +139,21 @@ function test_new_access_control_modes()
     @test is_assignable(t, :full_access) == true
     @test is_mutable(t, :full_access) == true
     @test is_writable(t, :full_access) == true
-    @test getkey(t, :full_access) == ["initial"]
-    @test setkey!(t, :full_access, ["replaced"]) == ["replaced"]
-    @test getkey(t, :full_access) == ["replaced"]
+    @test getindex(t, :full_access) == ["initial"]
+    @test setindex!(t, :full_access, ["replaced"]) == ["replaced"]
+    @test getindex(t, :full_access) == ["replaced"]
     result = with_key!(v -> push!(v, "mutated"), t, :full_access)
     @test length(result) == 2  # push! returns the array, which now has 2 elements
-    @test getkey(t, :full_access) == ["replaced", "mutated"]
+    @test getindex(t, :full_access) == ["replaced", "mutated"]
 
     # Test default access mode (should be READABLE_ASSIGNABLE_MUTABLE)
     @test is_readable(t, :default_access) == true
     @test is_assignable(t, :default_access) == true
     @test is_mutable(t, :default_access) == true
     @test is_writable(t, :default_access) == true
-    @test getkey(t, :default_access) == "default"
-    @test setkey!(t, :default_access, "new") == "new"
-    @test getkey(t, :default_access) == "new"
+    @test getindex(t, :default_access) == "default"
+    @test setindex!(t, :default_access, "new") == "new"
+    @test getindex(t, :default_access) == "new"
 end
 
 # Test Base.ismutable functionality
@@ -176,7 +176,7 @@ function test_base_ismutable()
     # Test with_key! works for non-isbits mutable keys
     result = with_key!(v -> push!(v, "new"), t, :full_access)
     @test length(result) == 2  # push! returns the array, which now has 2 elements
-    @test getkey(t, :full_access) == ["initial", "new"]
+    @test getindex(t, :full_access) == ["initial", "new"]
 end
 
 # Test legacy compatibility

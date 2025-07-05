@@ -67,21 +67,21 @@ struct Company
 end
 
 # Set keys
-setkey!(person, :name, "Alice")
-setkey!(person, :email, "alice@example.com")
-setkey!(person, :address, "123 Main St")
-setkey!(person, :data, ["item1", "item2"])
+setindex!(person, :name, "Alice")
+setindex!(person, :email, "alice@example.com")
+setindex!(person, :address, "123 Main St")
+setindex!(person, :data, ["item1", "item2"])
 
 # Access keys
-println(getkey(person, :name))                          # "Alice"
-println(getkey(person, :address))                       # "REDACTED" (get callback applied)
-println(getkey(person, :email))                         # "alice@example.com" (stored lowercase)
+println(getindex(person, :name))                          # "Alice"
+println(getindex(person, :address))                       # "REDACTED" (get callback applied)
+println(getindex(person, :email))                         # "alice@example.com" (stored lowercase)
 
 # Mutate mutable keys in place
 with_key!(person, :data) do data
     push!(data, "item3")                                 # Modify the vector in place
 end
-println(getkey(person, :data))                          # ["item1", "item2", "item3"]
+println(getindex(person, :data))                          # ["item1", "item2", "item3"]
 
 # Check key status
 println(isset(person, :name))                           # true
@@ -92,7 +92,7 @@ println(ismutable(person, :data))                       # true (Base.ismutable s
 println(ismutable(person))                              # true (struct itself is mutable)
 
 # Reset a key to unset state
-resetkey!(person, :address)
+resetindex!(person, :address)
 println(isset(person, :address))                        # false
 println(allkeysset(person))                             # false (address key was reset)
 println(is_readable(person, :email))                    # true
@@ -176,8 +176,8 @@ full_access_mode = AccessMode.READABLE_ASSIGNABLE_MUTABLE
 
 ### Key Access Semantics
 
-- **READABLE**: Allows `getkey()`, `with_key()`, and `with_keys()` operations
-- **ASSIGNABLE**: Allows `setkey!()` to replace the entire value with a new one
+- **READABLE**: Allows `getindex()`, `with_key()`, and `with_keys()` operations
+- **ASSIGNABLE**: Allows `setindex!()` to replace the entire value with a new one
 - **MUTABLE**: Allows `with_key!()` to modify the value in-place (for non-isbits types)
 
 ## Key Callbacks
@@ -200,30 +200,30 @@ Where:
 
 ### Get Callbacks
 
-Get callbacks are executed when `getkey` is called and allow you to transform the raw stored value before it's returned to the caller:
+Get callbacks are executed when `getindex` is called and allow you to transform the raw stored value before it's returned to the caller:
 
-- Executed during: `getkey(obj, key_name)`
+- Executed during: `getindex(obj, key_name)`
 - Input: The actual stored value
 - Output: The transformed value returned to the caller
 - Common uses: Masking sensitive data, formatting values, applying transformations, computing derived values
 
 ### Set Callbacks
 
-Set callbacks are executed when `setkey!` is called and allow you to transform or validate input values before they're stored:
+Set callbacks are executed when `setindex!` is called and allow you to transform or validate input values before they're stored:
 
-- Executed during: `setkey!(obj, key_name, value)`
-- Input: The value provided to `setkey!`
+- Executed during: `setindex!(obj, key_name, value)`
+- Input: The value provided to `setindex!`
 - Output: The transformed value that will be stored
 - Common uses: Validation, normalization, type conversion, enforcement of business rules
 
 ### Callback Order and Flow
 
-1. When setting a key (`setkey!`):
+1. When setting a key (`setindex!`):
    - The set callback is applied first to transform the input value
    - The transformed value is then stored in the key
    - The timestamp is updated
 
-2. When getting a key (`getkey`):
+2. When getting a key (`getindex`):
    - The raw stored value is retrieved
    - The get callback is applied to transform the value
    - The transformed value is returned
@@ -312,7 +312,7 @@ end
 result = with_key!(person, :age) do age
     age + 1
 end
-setkey!(person, :age, result)                           # Need to explicitly update the key
+setindex!(person, :age, result)                           # Need to explicitly update the key
 
 # Mutate collections in place with with_key!
 with_key!(person, :data) do data_array
@@ -326,10 +326,10 @@ average_score = with_keys(person, :age, :score) do age, score
 end
 
 # To update multiple keys, you need to get and set them individually
-name = getkey(person, :name) * " Smith"                 # Add surname
-age = getkey(person, :age) + 1                          # Increment age
-setkey!(person, :name, name)
-setkey!(person, :age, age)
+name = getindex(person, :name) * " Smith"                 # Add surname
+age = getindex(person, :age) + 1                          # Increment age
+setindex!(person, :name, name)
+setindex!(person, :age, age)
 ```
 
 ### Key Metadata and Information
@@ -357,9 +357,9 @@ println(ismutable(person))                              # true (struct is mutabl
 
 ### Key Access
 
-- `getkey(obj, key_name)`: Get a key value
-- `setkey!(obj, key_name, value)`: Set a key value
-- `resetkey!(obj, key_name)`: Reset a key to an unset state
+- `getindex(obj, key_name)`: Get a key value
+- `setindex!(obj, key_name, value)`: Set a key value
+- `resetindex!(obj, key_name)`: Reset a key to an unset state
 - `isset(obj, key_name)`: Check if a key is set (not `nothing`)
 - `allkeysset(obj)`: Check if all keys are set
 - `keytype(obj, key_name)`: Get a key's type

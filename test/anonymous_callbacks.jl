@@ -46,47 +46,47 @@ function test_anonymous_callbacks()
         t = TestAnonymousCallbacks()
         
         # Test get callback with anonymous function
-        @test getkey(t, :name) == "DEFAULT"  # Should be uppercase
-        setkey!(t, :name, "test")
-        @test getkey(t, :name) == "TEST"  # Should be uppercase
+        @test getindex(t, :name) == "DEFAULT"  # Should be uppercase
+        setindex!(t, :name, "test")
+        @test getindex(t, :name) == "TEST"  # Should be uppercase
         
         # Test set callback with anonymous function
-        setkey!(t, :email, "USER@EXAMPLE.COM")
-        @test getkey(t, :email) == "user@example.com"  # Should be lowercase
+        setindex!(t, :email, "USER@EXAMPLE.COM")
+        @test getindex(t, :email) == "user@example.com"  # Should be lowercase
         
         # Test both read and set callbacks
-        @test getkey(t, :score) == 20  # Default 10 * 2 from get callback
-        setkey!(t, :score, -5)
-        @test getkey(t, :score) == 0  # max(0, -5) = 0, then * 2 = 0
-        setkey!(t, :score, 7)
-        @test getkey(t, :score) == 14  # 7, then * 2 = 14
+        @test getindex(t, :score) == 20  # Default 10 * 2 from get callback
+        setindex!(t, :score, -5)
+        @test getindex(t, :score) == 0  # max(0, -5) = 0, then * 2 = 0
+        setindex!(t, :score, 7)
+        @test getindex(t, :score) == 14  # 7, then * 2 = 14
         
         # Test more complex anonymous function logic
-        @test getkey(t, :status) == :ACTIVE  # Default :active transformed to :ACTIVE
-        setkey!(t, :status, :pending)
-        @test getkey(t, :status) == :PENDING
-        setkey!(t, :status, :inactive)
-        @test getkey(t, :status) == :inactive  # No special transformation
-        setkey!(t, :status, :unknown)
-        @test getkey(t, :status) == :invalid  # Converted by set callback
+        @test getindex(t, :status) == :ACTIVE  # Default :active transformed to :ACTIVE
+        setindex!(t, :status, :pending)
+        @test getindex(t, :status) == :PENDING
+        setindex!(t, :status, :inactive)
+        @test getindex(t, :status) == :inactive  # No special transformation
+        setindex!(t, :status, :unknown)
+        @test getindex(t, :status) == :invalid  # Converted by set callback
         
         # Test comparing anonymous callbacks vs. named callbacks
         tnamed = TestCallback()
         
         # Set identical values to compare behavior
-        setkey!(tnamed, :uppercase, "hello")
-        setkey!(t, :name, "hello")
+        setindex!(tnamed, :uppercase, "hello")
+        setindex!(t, :name, "hello")
         
         # Both should have the same result despite different implementation
-        @test getkey(tnamed, :uppercase) == "HELLO"
-        @test getkey(t, :name) == "HELLO"
+        @test getindex(tnamed, :uppercase) == "HELLO"
+        @test getindex(t, :name) == "HELLO"
         
         # Test with more complex scenario
-        setkey!(tnamed, :transformed, 5)  # Will be multiplied by 2 on write, divided by 2 on read
-        setkey!(t, :score, 5)  # Will be unchanged on write (>0), multiplied by 2 on read
+        setindex!(tnamed, :transformed, 5)  # Will be multiplied by 2 on write, divided by 2 on read
+        setindex!(t, :score, 5)  # Will be unchanged on write (>0), multiplied by 2 on read
         
         # Both should have similar behavior for positive values but through different mechanisms
-        @test getkey(tnamed, :transformed) == 5
-        @test getkey(t, :score) == 10
+        @test getindex(tnamed, :transformed) == 5
+        @test getindex(t, :score) == 10
     end
 end

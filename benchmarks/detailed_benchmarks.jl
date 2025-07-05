@@ -57,7 +57,7 @@ end
 
 # Component 3: Full key update
 function full_key_update(sensor, value)
-    setkey!(sensor, :value, value)
+    setindex!(sensor, :value, value)
     return value
 end
 
@@ -98,8 +98,8 @@ field_update_time = @belapsed begin
     setfield!($fast_sensor, :_value_timestamp, 12345)
 end
 
-full_epoch_time = @belapsed setkey!($fast_sensor, :value, 42.0)
-full_cached_time = @belapsed setkey!($cached_sensor, :value, 42.0)
+full_epoch_time = @belapsed setindex!($fast_sensor, :value, 42.0)
+full_cached_time = @belapsed setindex!($cached_sensor, :value, 42.0)
 
 println("Time breakdown (in nanoseconds):")
 println("  Field updates:           $(round(field_update_time * 1e9, digits=2)) ns")

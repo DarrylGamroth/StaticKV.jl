@@ -185,10 +185,10 @@ function test_macro_expansion()
         @test :message_rate in keynames(config)
 
         # Test key values (ensure the URI matches what's in the ENV)
-        @test getkey(config, :DataURI1) == ENV["SUB_DATA_URI_1"]
-        @test getkey(config, :DataStreamID1) == 4
-        @test getkey(config, :message_count) == 0
-        @test getkey(config, :version) == 0x00000001
+        @test getindex(config, :DataURI1) == ENV["SUB_DATA_URI_1"]
+        @test getindex(config, :DataStreamID1) == 4
+        @test getindex(config, :message_count) == 0
+        @test getindex(config, :version) == 0x00000001
     end
     
     # Test nested macro usage
@@ -210,14 +210,14 @@ function test_macro_expansion()
         user = SecuredUser()
 
         # Test read-only key
-        @test_throws Exception setkey!(user, :username, "admin")
+        @test_throws Exception setindex!(user, :username, "admin")
         
         # Test writable keys
-        setkey!(user, :password, "secret123")
-        setkey!(user, :email, "ADMIN@EXAMPLE.COM")
+        setindex!(user, :password, "secret123")
+        setindex!(user, :email, "ADMIN@EXAMPLE.COM")
         
         # Test value transformation via callbacks
-        @test getkey(user, :email) == "admin@example.com"
-        @test getkey(user, :password) == "********"
+        @test getindex(user, :email) == "admin@example.com"
+        @test getindex(user, :password) == "********"
     end
 end

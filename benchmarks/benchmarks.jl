@@ -50,45 +50,45 @@ fast_sensor = FastSensor(Clocks.CachedEpochClock(Clocks.EpochClock()))
 callback_sensor = CallbackSensor()
 
 # Initialize with some values
-setkey!(fast_sensor, :value, 42.0)
-setkey!(fast_sensor, :quality, 0x95)
-setkey!(fast_sensor, :timestamp_ns, 1234567890)
-setkey!(fast_sensor, :is_valid, true)
+setindex!(fast_sensor, :value, 42.0)
+setindex!(fast_sensor, :quality, 0x95)
+setindex!(fast_sensor, :timestamp_ns, 1234567890)
+setindex!(fast_sensor, :is_valid, true)
 
-setkey!(callback_sensor, :value, 21.0)  # Will be stored as 21.0, read as 42.0
-setkey!(callback_sensor, :quality, 0x95)
+setindex!(callback_sensor, :value, 21.0)  # Will be stored as 21.0, read as 42.0
+setindex!(callback_sensor, :quality, 0x95)
 
-# Benchmark basic getkey operations
+# Benchmark basic getindex operations
 println("Get key (Val dispatch):")
-@btime getkey($fast_sensor, $(Val(:value)))
-@btime getkey($fast_sensor, $(Val(:quality)))
-@btime getkey($fast_sensor, $(Val(:is_valid)))
+@btime getindex($fast_sensor, $(Val(:value)))
+@btime getindex($fast_sensor, $(Val(:quality)))
+@btime getindex($fast_sensor, $(Val(:is_valid)))
 
 println("\nGet key (Symbol dispatch):")
-@btime getkey($fast_sensor, :value)
-@btime getkey($fast_sensor, :quality)
-@btime getkey($fast_sensor, :is_valid)
+@btime getindex($fast_sensor, :value)
+@btime getindex($fast_sensor, :quality)
+@btime getindex($fast_sensor, :is_valid)
 
 println("\nSet key (Val dispatch):")
-@btime setkey!($fast_sensor, $(Val(:value)), 99.0)
-@btime setkey!($fast_sensor, $(Val(:quality)), 0xff)
-@btime setkey!($fast_sensor, $(Val(:is_valid)), false)
+@btime setindex!($fast_sensor, $(Val(:value)), 99.0)
+@btime setindex!($fast_sensor, $(Val(:quality)), 0xff)
+@btime setindex!($fast_sensor, $(Val(:is_valid)), false)
 
 println("\nSet key (Symbol dispatch):")
-@btime setkey!($fast_sensor, :value, 99.0)
-@btime setkey!($fast_sensor, :quality, 0xff)
-@btime setkey!($fast_sensor, :is_valid, false)
+@btime setindex!($fast_sensor, :value, 99.0)
+@btime setindex!($fast_sensor, :quality, 0xff)
+@btime setindex!($fast_sensor, :is_valid, false)
 
 println("\n🔄 Callback Overhead Comparison")
 println("-" ^ 40)
 
 println("Default callbacks (zero overhead):")
-@btime getkey($fast_sensor, :value)
-@btime setkey!($fast_sensor, :value, 42.0)
+@btime getindex($fast_sensor, :value)
+@btime setindex!($fast_sensor, :value, 42.0)
 
 println("\nCustom callbacks:")
-@btime getkey($callback_sensor, :value)  # Should return 42.0 (21.0 * 2)
-@btime setkey!($callback_sensor, :value, 30.0)  # Will clamp to max(0.0, 30.0)
+@btime getindex($callback_sensor, :value)  # Should return 42.0 (21.0 * 2)
+@btime setindex!($callback_sensor, :value, 30.0)  # Will clamp to max(0.0, 30.0)
 
 println("\n⏱️  Clock Type Performance Comparison")
 println("-" ^ 40)
@@ -100,32 +100,32 @@ cached_sensor = CachedSensor(cached_clock)
 
 println("EpochClock (default):")
 println("Type: $(typeof(epoch_sensor))")
-@btime setkey!($epoch_sensor, :value, 123.0)
+@btime setindex!($epoch_sensor, :value, 123.0)
 
 println("\nCachedEpochClock:")
 println("Type: $(typeof(cached_sensor))")
-@btime setkey!($cached_sensor, :value, 123.0)
+@btime setindex!($cached_sensor, :value, 123.0)
 
 println("\n🏃 High-Frequency Operation Simulation")
 println("-" ^ 40)
 
 function update_sensor_fast!(sensor, values)
     for val in values
-        setkey!(sensor, :value, val)
-        setkey!(sensor, :quality, 0x80)
+        setindex!(sensor, :value, val)
+        setindex!(sensor, :quality, 0x80)
         # Simulate getting the values back
-        getkey(sensor, :value)
-        getkey(sensor, :quality)
+        getindex(sensor, :value)
+        getindex(sensor, :quality)
     end
 end
 
 function update_sensor_symbol!(sensor, values)
     for val in values
-        setkey!(sensor, :value, val)
-        setkey!(sensor, :quality, 0x80)
+        setindex!(sensor, :value, val)
+        setindex!(sensor, :quality, 0x80)
         # Simulate getting the values back
-        getkey(sensor, :value)
-        getkey(sensor, :quality)
+        getindex(sensor, :value)
+        getindex(sensor, :quality)
     end
 end
 
@@ -165,22 +165,22 @@ println("-" ^ 40)
 
 function test_allocations()
     sensor = FastSensor()
-    setkey!(sensor, :value, 42.0)
+    setindex!(sensor, :value, 42.0)
     
     println("Allocations for basic operations:")
     
     # These should all be zero allocations
-    allocs_get_val = @allocated getkey(sensor, Val(:value))
-    allocs_get_sym = @allocated getkey(sensor, :value)
-    allocs_set_val = @allocated setkey!(sensor, Val(:value), 99.0)
-    allocs_set_sym = @allocated setkey!(sensor, :value, 99.0)
+    allocs_get_val = @allocated getindex(sensor, Val(:value))
+    allocs_get_sym = @allocated getindex(sensor, :value)
+    allocs_set_val = @allocated setindex!(sensor, Val(:value), 99.0)
+    allocs_set_sym = @allocated setindex!(sensor, :value, 99.0)
     allocs_is_set = @allocated isset(sensor, :value)
     allocs_metadata = @allocated keytype(sensor, :value)
     
-    println("  getkey(Val):     $(allocs_get_val) bytes")
-    println("  getkey(Symbol):  $(allocs_get_sym) bytes")
-    println("  setkey!(Val):    $(allocs_set_val) bytes")
-    println("  setkey!(Symbol): $(allocs_set_sym) bytes")
+    println("  getindex(Val):     $(allocs_get_val) bytes")
+    println("  getindex(Symbol):  $(allocs_get_sym) bytes")
+    println("  setindex!(Val):    $(allocs_set_val) bytes")
+    println("  setindex!(Symbol): $(allocs_set_sym) bytes")
     println("  isset:           $(allocs_is_set) bytes")
     println("  keytype:         $(allocs_metadata) bytes")
     
@@ -200,10 +200,10 @@ println("-" ^ 40)
 
 # Quick summary benchmark
 sensor = FastSensor()
-setkey!(sensor, :value, 42.0)
+setindex!(sensor, :value, 42.0)
 
-get_time = @belapsed getkey($sensor, :value)
-set_time = @belapsed setkey!($sensor, :value, 99.0)
+get_time = @belapsed getindex($sensor, :value)
+set_time = @belapsed setindex!($sensor, :value, 99.0)
 
 println("Key access time:  $(round(get_time * 1e9, digits=2)) ns")
 println("Key update time:  $(round(set_time * 1e9, digits=2)) ns")

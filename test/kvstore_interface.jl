@@ -17,72 +17,72 @@ function test_kvstore_interface()
 
     # Create a test instance
     bag = TestBag()
-    bag[:string_key] = "hello"
+    setindex!(bag, "hello", :string_key)
     
     @testset "Base.getindex - Single key" begin
-        @test bag[:string_key] == "hello"
-        @test bag[:int_key] == 42
-        @test bag[:read_only] == 3.14
-        @test bag[:custom_read] == "READ: original"
-        @test_throws ErrorException bag[:write_only]  # Not readable
-        @test_throws ErrorException bag[:nonexistent]  # Doesn't exist
+        @test getindex(bag, :string_key) == "hello"
+        @test getindex(bag, :int_key) == 42
+        @test getindex(bag, :read_only) == 3.14
+        @test getindex(bag, :custom_read) == "READ: original"
+        @test_throws ErrorException getindex(bag, :write_only)  # Not readable
+        @test_throws ErrorException getindex(bag, :nonexistent)  # Doesn't exist
     end
 
     @testset "Base.getindex - Multiple keys" begin
-        @test bag[:string_key, :int_key] == ("hello", 42)
-        @test bag[:int_key, :read_only, :custom_read] == (42, 3.14, "READ: original")
-        @test_throws ErrorException bag[:string_key, :write_only]  # One key not readable
-        @test_throws ErrorException bag[:string_key, :nonexistent]  # One key doesn't exist
+        @test getindex(bag, :string_key, :int_key) == ("hello", 42)
+        @test getindex(bag, :int_key, :read_only, :custom_read) == (42, 3.14, "READ: original")
+        @test_throws ErrorException getindex(bag, :string_key, :write_only)  # One key not readable
+        @test_throws ErrorException getindex(bag, :string_key, :nonexistent)  # One key doesn't exist
     end
 
     @testset "Base.setindex! - Single key" begin
         # Test writable properties
-        bag[:string_key] = "world"
-        @test bag[:string_key] == "world"
+        setindex!(bag, "world", :string_key)
+        @test getindex(bag, :string_key) == "world"
         
-        bag[:int_key] = 100
-        @test bag[:int_key] == 100
+        setindex!(bag, 100, :int_key)
+        @test getindex(bag, :int_key) == 100
         
-        bag[:write_only] = :test
+        setindex!(bag, :test, :write_only)
         @test isset(bag, :write_only)
-        @test_throws ErrorException bag[:write_only]  # Can't read it but it's set
+        @test_throws ErrorException getindex(bag, :write_only)  # Can't read it but it's set
         
-        bag[:custom_read] = "modified"
-        @test bag[:custom_read] == "READ: modified"
+        setindex!(bag, "modified", :custom_read)
+        @test getindex(bag, :custom_read) == "READ: modified"
         
         # Test read-only key
-        @test_throws ErrorException bag[:read_only] = 2.71
-        @test bag[:read_only] == 3.14  # Value unchanged
+        @test_throws ErrorException setindex!(bag, 2.71, :read_only)
+        @test getindex(bag, :read_only) == 3.14  # Value unchanged
         
         # Test nonexistent key
-        @test_throws ErrorException bag[:nonexistent] = "value"
+        @test_throws ErrorException setindex!(bag, "value", :nonexistent)
     end
 
     @testset "Base.setindex! - Multiple keys" begin
         # Test with tuple values
-        bag[:string_key, :int_key] = ("multiple", 200)
-        @test bag[:string_key] == "multiple"
-        @test bag[:int_key] == 200
+        setindex!(bag, ("multiple", 200), :string_key, :int_key)
+        @test getindex(bag, :string_key) == "multiple"
+        @test getindex(bag, :int_key) == 200
         
         # Test with array values
-        bag[:string_key, :int_key] = ["array", 300]
-        @test bag[:string_key] == "array"
-        @test bag[:int_key] == 300
+        setindex!(bag, ["array", 300], :string_key, :int_key)
+        @test getindex(bag, :string_key) == "array"
+        @test getindex(bag, :int_key) == 300
         
         # Sets don't work with indexing, as they're unordered
         # Try with another collection that supports indexing
-        bag[:string_key, :int_key] = collect(["set", 400])
-        @test bag[:string_key] == "set"
-        @test bag[:int_key] == 400
+        setindex!(bag, collect(["set", 400]), :string_key, :int_key)
+        @test getindex(bag, :string_key) == "set"
+        @test getindex(bag, :int_key) == 400
         
         # Test value count mismatch
-        @test_throws ArgumentError bag[:string_key, :int_key] = ("one_value",)
+        @test_throws ArgumentError setindex!(bag, ("one_value",), :string_key, :int_key)
         
         # Test with read-only key
-        @test_throws ErrorException bag[:string_key, :read_only] = ("ok", 2.71)
+        @test_throws ErrorException setindex!(bag, ("ok", 2.71), :string_key, :read_only)
         
         # Test with nonexistent key
-        @test_throws ErrorException bag[:string_key, :nonexistent] = ("ok", "bad")
+        @test_throws ErrorException setindex!(bag, ("ok", "bad"), :string_key, :nonexistent)
     end
 
     @testset "Base.keys" begin
@@ -94,8 +94,8 @@ function test_kvstore_interface()
         # For this test, we need to create a clean instance without the write_only key set
         # since Base.values will try to read all set keys
         clean_bag = TestBag()
-        clean_bag[:string_key] = "test_values"
-        clean_bag[:int_key] = 999
+        setindex!(clean_bag, "test_values", :string_key)
+        setindex!(clean_bag, 999, :int_key)
         # Note: read_only and custom_read already have default values
         
         # Only set properties with read access are included
@@ -108,8 +108,8 @@ function test_kvstore_interface()
     @testset "Base.pairs" begin
         # Create a new bag to have deterministic state
         new_bag = TestBag()
-        new_bag[:string_key] = "pair_test"
-        new_bag[:int_key] = 500
+        setindex!(new_bag, "pair_test", :string_key)
+        setindex!(new_bag, 500, :int_key)
         
         pairs_dict = Dict(collect(pairs(new_bag)))
         @test pairs_dict[:string_key] == "pair_test"
@@ -123,7 +123,7 @@ function test_kvstore_interface()
         # We're using direct iteration which calls iterate internally
         # Iteration should yield key-value pairs for properties that are set and readable
         new_bag = TestBag()
-        new_bag[:string_key] = "iterate_test"
+        setindex!(new_bag, "iterate_test", :string_key)
         
         # Collect into dictionary for easy testing
         iterated_dict = Dict(new_bag)
@@ -140,14 +140,14 @@ function test_kvstore_interface()
         empty_bag = TestBag()  # Only default values are set
         @test length(empty_bag) == 3  # int_key, read_only, custom_read have defaults
         
-        empty_bag[:string_key] = "length_test"
+        setindex!(empty_bag, "length_test", :string_key)
         @test length(empty_bag) == 4
         
-        empty_bag[:write_only] = :set
+        setindex!(empty_bag, :set, :write_only)
         @test length(empty_bag) == 5  # All properties are now set
         
         # Reset a key
-        resetkey!(empty_bag, :custom_read)
+        resetindex!(empty_bag, :custom_read)
         @test length(empty_bag) == 4
     end
     
@@ -163,8 +163,8 @@ function test_kvstore_interface()
     @testset "Base.get" begin
         # Create a new bag with known state for these tests
         get_bag = TestBag()
-        get_bag[:string_key] = "get_test"
-        get_bag[:int_key] = 123
+        setindex!(get_bag, "get_test", :string_key)
+        setindex!(get_bag, 123, :int_key)
         
         @test get(get_bag, :string_key, "default") == "get_test"
         @test get(get_bag, :int_key, 0) == 123
@@ -172,7 +172,7 @@ function test_kvstore_interface()
         @test get(get_bag, :custom_read, "default") == "READ: original"
         
         # Test default value for unset key
-        resetkey!(get_bag, :string_key)
+        resetindex!(get_bag, :string_key)
         @test get(get_bag, :string_key, "was_reset") == "was_reset"
         
         # Nonexistent key returns default
@@ -183,7 +183,7 @@ function test_kvstore_interface()
         # @test get(bag, :write_only, :default) == :default
         
         # Reset a key and test default
-        resetkey!(bag, :string_key)
+        resetindex!(bag, :string_key)
         @test get(bag, :string_key, "was_reset") == "was_reset"
         
         # Nonexistent key returns default
