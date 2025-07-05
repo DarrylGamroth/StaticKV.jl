@@ -16,6 +16,7 @@ include("default_callbacks.jl")
 include("kvstore_interface.jl")
 include("macro_expansion.jl")
 include("dot_syntax.jl")
+include("abstract_type.jl")
 
 # Run all tests
 @testset verbose=true "StaticKV.jl" begin
@@ -64,5 +65,9 @@ include("dot_syntax.jl")
     
     @testset "Dot Syntax" begin
         test_dot_syntax()
+    end
+    
+    @testset "Abstract Type" begin
+        test_abstract_type()
     end
 end
