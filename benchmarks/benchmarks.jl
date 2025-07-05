@@ -50,19 +50,19 @@ fast_sensor = FastSensor(Clocks.CachedEpochClock(Clocks.EpochClock()))
 callback_sensor = CallbackSensor()
 
 # Initialize with some values
-setindex!(fast_sensor, :value, 42.0)
-setindex!(fast_sensor, :quality, 0x95)
-setindex!(fast_sensor, :timestamp_ns, 1234567890)
-setindex!(fast_sensor, :is_valid, true)
+setindex!(fast_sensor, 42.0, :value)
+setindex!(fast_sensor, 0x95, :quality)
+setindex!(fast_sensor, 1234567890, :timestamp_ns)
+setindex!(fast_sensor, true, :is_valid)
 
-setindex!(callback_sensor, :value, 21.0)  # Will be stored as 21.0, read as 42.0
-setindex!(callback_sensor, :quality, 0x95)
+setindex!(callback_sensor, 21.0, :value)  # Will be stored as 21.0, read as 42.0
+setindex!(callback_sensor, 0x95, :quality)
 
 # Benchmark basic getindex operations
 println("Get key (Val dispatch):")
-@btime getindex($fast_sensor, $(Val(:value)))
-@btime getindex($fast_sensor, $(Val(:quality)))
-@btime getindex($fast_sensor, $(Val(:is_valid)))
+@btime StaticKV.getkey($fast_sensor, $(Val(:value)))
+@btime StaticKV.getkey($fast_sensor, $(Val(:quality)))
+@btime StaticKV.getkey($fast_sensor, $(Val(:is_valid)))
 
 println("\nGet key (Symbol dispatch):")
 @btime getindex($fast_sensor, :value)
@@ -70,25 +70,25 @@ println("\nGet key (Symbol dispatch):")
 @btime getindex($fast_sensor, :is_valid)
 
 println("\nSet key (Val dispatch):")
-@btime setindex!($fast_sensor, $(Val(:value)), 99.0)
-@btime setindex!($fast_sensor, $(Val(:quality)), 0xff)
-@btime setindex!($fast_sensor, $(Val(:is_valid)), false)
+@btime StaticKV.setkey!($fast_sensor, 99.0, $(Val(:value)))
+@btime StaticKV.setkey!($fast_sensor, 0xff, $(Val(:quality)))
+@btime StaticKV.setkey!($fast_sensor, false, $(Val(:is_valid)))
 
 println("\nSet key (Symbol dispatch):")
-@btime setindex!($fast_sensor, :value, 99.0)
-@btime setindex!($fast_sensor, :quality, 0xff)
-@btime setindex!($fast_sensor, :is_valid, false)
+@btime setindex!($fast_sensor, 99.0, :value)
+@btime setindex!($fast_sensor, 0xff, :quality)
+@btime setindex!($fast_sensor, false, :is_valid)
 
 println("\n🔄 Callback Overhead Comparison")
 println("-" ^ 40)
 
 println("Default callbacks (zero overhead):")
 @btime getindex($fast_sensor, :value)
-@btime setindex!($fast_sensor, :value, 42.0)
+@btime setindex!($fast_sensor, 42.0, :value)
 
 println("\nCustom callbacks:")
 @btime getindex($callback_sensor, :value)  # Should return 42.0 (21.0 * 2)
-@btime setindex!($callback_sensor, :value, 30.0)  # Will clamp to max(0.0, 30.0)
+@btime setindex!($callback_sensor, 30.0, :value)  # Will clamp to max(0.0, 30.0)
 
 println("\n⏱️  Clock Type Performance Comparison")
 println("-" ^ 40)
@@ -100,19 +100,19 @@ cached_sensor = CachedSensor(cached_clock)
 
 println("EpochClock (default):")
 println("Type: $(typeof(epoch_sensor))")
-@btime setindex!($epoch_sensor, :value, 123.0)
+@btime setindex!($epoch_sensor, 123.0, :value)
 
 println("\nCachedEpochClock:")
 println("Type: $(typeof(cached_sensor))")
-@btime setindex!($cached_sensor, :value, 123.0)
+@btime setindex!($cached_sensor, 123.0, :value)
 
 println("\n🏃 High-Frequency Operation Simulation")
 println("-" ^ 40)
 
 function update_sensor_fast!(sensor, values)
     for val in values
-        setindex!(sensor, :value, val)
-        setindex!(sensor, :quality, 0x80)
+        setindex!(sensor, val, :value)
+        setindex!(sensor, 0x80, :quality)
         # Simulate getting the values back
         getindex(sensor, :value)
         getindex(sensor, :quality)
@@ -121,8 +121,8 @@ end
 
 function update_sensor_symbol!(sensor, values)
     for val in values
-        setindex!(sensor, :value, val)
-        setindex!(sensor, :quality, 0x80)
+        setindex!(sensor, val, :value)
+        setindex!(sensor, 0x80, :quality)
         # Simulate getting the values back
         getindex(sensor, :value)
         getindex(sensor, :quality)
@@ -165,15 +165,15 @@ println("-" ^ 40)
 
 function test_allocations()
     sensor = FastSensor()
-    setindex!(sensor, :value, 42.0)
+    setindex!(sensor, 42.0, :value)
     
     println("Allocations for basic operations:")
     
     # These should all be zero allocations
-    allocs_get_val = @allocated getindex(sensor, Val(:value))
+    allocs_get_val = @allocated StaticKV.getkey(sensor, Val(:value))
     allocs_get_sym = @allocated getindex(sensor, :value)
-    allocs_set_val = @allocated setindex!(sensor, Val(:value), 99.0)
-    allocs_set_sym = @allocated setindex!(sensor, :value, 99.0)
+    allocs_set_val = @allocated StaticKV.setkey!(sensor, 99.0, Val(:value))
+    allocs_set_sym = @allocated setindex!(sensor, 99.0, :value)
     allocs_is_set = @allocated isset(sensor, :value)
     allocs_metadata = @allocated keytype(sensor, :value)
     
@@ -200,10 +200,10 @@ println("-" ^ 40)
 
 # Quick summary benchmark
 sensor = FastSensor()
-setindex!(sensor, :value, 42.0)
+setindex!(sensor, 42.0, :value)
 
 get_time = @belapsed getindex($sensor, :value)
-set_time = @belapsed setindex!($sensor, :value, 99.0)
+set_time = @belapsed setindex!($sensor, 99.0, :value)
 
 println("Key access time:  $(round(get_time * 1e9, digits=2)) ns")
 println("Key update time:  $(round(set_time * 1e9, digits=2)) ns")

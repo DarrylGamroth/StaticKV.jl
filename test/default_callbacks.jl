@@ -25,12 +25,12 @@ function test_default_callbacks()
     t = TestCustomDefaultCallbacks()
 
     # Set keys
-    setindex!(t, :name, "Alice")
-    setindex!(t, :age, 30)
+    StaticKV.setkey!(t, "Alice", :name)
+    StaticKV.setkey!(t, 30, :age)
 
     # Test that the custom default get callback is used
-    @test getindex(t, :name) == "Custom Get: ALICE"
-    @test getindex(t, :age) == "Custom Get: 30"
+    @test StaticKV.getkey(t, :name) == "Custom Get: ALICE"
+    @test StaticKV.getkey(t, :age) == "Custom Get: 30"
 
     # Test that the custom default set callback is used
     raw_value = getfield(t, :name)
@@ -38,6 +38,6 @@ function test_default_callbacks()
     
     # Create with regular defaults for comparison
     t2 = TestDefaultCallbacks()
-    setindex!(t2, :name, "Alice")
-    @test getindex(t2, :name) == "Alice" # Regular default callbacks
+    StaticKV.setkey!(t2, "Alice", :name)
+    @test StaticKV.getkey(t2, :name) == "Alice" # Regular default callbacks
 end

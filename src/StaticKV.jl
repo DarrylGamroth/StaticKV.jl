@@ -43,7 +43,7 @@ using MacroTools
 
 # Export public API
 export @kvstore, AccessMode
-export resetindex!, keytype, isset, allkeysset
+export resetkey!, isset, allkeysset
 export is_readable, is_assignable, is_mutable, is_writable, last_update
 export with_key, with_key!, with_keys
 export keynames
@@ -115,6 +115,23 @@ end # AccessMode module
 # Base function definitions that will be extended by generated methods
 # These must be defined in the StaticKV module so that generated methods can extend them
 
+
+"""
+    getkey(kvstore, key)
+    getkey(kvstore, Val(key))
+
+Get the value of a key from a key-value store.
+"""
+function getkey end
+
+"""
+    setkey!(kvstore, value, key)
+    setkey!(kvstore, value, Val(key))
+
+Set the value of a key in a key-value store.
+"""
+function setkey! end
+
 """
     resetkey!(kvstore, key)
     resetkey!(kvstore, Val(key))
@@ -178,14 +195,6 @@ function last_update end
 Get a tuple of all key names in the key-value store.
 """
 function keynames end
-
-"""
-    keytype(kvstore, key)
-    keytype(Type{<:KVStore}, key)
-
-Get the type of a key.
-"""
-function keytype end
 
 """
     allkeysset(kvstore)
@@ -740,7 +749,7 @@ macro kvstore(struct_name, args...)
             end
 
             # Key-specific setkey! method
-            @inline function StaticKV.setkey!(k::$(struct_name), ::Val{$(QuoteNode(name))}, v)
+            @inline function StaticKV.setkey!(k::$(struct_name), v, ::Val{$(QuoteNode(name))})
                 # Access check
                 _is_assignable($(struct_name), Val($(QuoteNode(name)))) ||
                     throw(ErrorException("Key not assignable"))
@@ -783,7 +792,7 @@ macro kvstore(struct_name, args...)
                 getfield(k, $(QuoteNode(timestamp_field)))
             end
 
-            @inline function StaticKV.resetindex!(k::$(struct_name), ::Val{$(QuoteNode(name))})
+            @inline function StaticKV.resetkey!(k::$(struct_name), ::Val{$(QuoteNode(name))})
                 _is_assignable($(struct_name), Val($(QuoteNode(name)))) ||
                     throw(ErrorException("Key not assignable"))
                 setfield!(k, $(QuoteNode(name)), nothing)
@@ -813,13 +822,13 @@ macro kvstore(struct_name, args...)
             end)
         end
 
-        @inline function StaticKV.setindex!(k::$(struct_name), s::Symbol, v)
+        @inline function StaticKV.setkey!(k::$(struct_name), v, s::Symbol)
             $(if length(key_names) == 0
                 :(throw(ErrorException("Key not found")))
             else
                 result = :(throw(ErrorException("Key not found")))
                 for name in reverse(key_names)
-                    result = :(s === $(QuoteNode(name)) ? StaticKV.setindex!(k, Val($(QuoteNode(name))), v) : $result)
+                    result = :(s === $(QuoteNode(name)) ? StaticKV.setkey!(k, v, Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
@@ -897,34 +906,19 @@ macro kvstore(struct_name, args...)
             end)
         end
 
-        @inline function StaticKV.resetindex!(k::$(struct_name), s::Symbol)
+        @inline function StaticKV.resetkey!(k::$(struct_name), s::Symbol)
             $(if length(key_names) == 0
                 :(throw(ErrorException("Key not found")))
             else
                 result = :(throw(ErrorException("Key not found")))
                 for name in reverse(key_names)
-                    result = :(s === $(QuoteNode(name)) ? StaticKV.resetindex!(k, Val($(QuoteNode(name)))) : $result)
+                    result = :(s === $(QuoteNode(name)) ? StaticKV.resetkey!(k, Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
         end
 
         # Additional utility functions
-        @inline function StaticKV.keytype(::Type{<:$(struct_name)}, s::Symbol)
-            $(if length(key_names) == 0
-                :(nothing)
-            else
-                result = :(nothing)
-                for (i, name) in enumerate(reverse(key_names))
-                    key_type = key_types[end-i+1]
-                    result = :(s === $(QuoteNode(name)) ? $(key_type) : $result)
-                end
-                result
-            end)
-        end
-
-        @inline StaticKV.keytype(k::$(struct_name), s::Symbol) = StaticKV.keytype(typeof(k), s)
-
         @inline function StaticKV.allkeysset(k::$(struct_name))
             $(if length(key_names) == 0
                 :(true)
@@ -1088,7 +1082,7 @@ macro kvstore(struct_name, args...)
         end
 
         @inline function Base.setindex!(k::$(struct_name), value, key::Symbol)
-            StaticKV.setkey!(k, key, value)
+            StaticKV.setkey!(k, value, key)
         end
 
         @inline function Base.setindex!(k::$(struct_name), values, keys::Symbol...)
@@ -1096,7 +1090,7 @@ macro kvstore(struct_name, args...)
                 throw(ArgumentError("Number of values (\$(length(values))) must match number of keys (\$(length(keys)))"))
             end
             for (key, val) in zip(keys, values)
-                StaticKV.setkey!(k, key, val)
+                StaticKV.setkey!(k, val, key)
             end
             values
         end
@@ -1186,6 +1180,21 @@ macro kvstore(struct_name, args...)
             key in StaticKV.keynames(k)
         end
 
+        @inline function Base.keytype(::Type{<:$(struct_name)}, s::Symbol)
+            $(if length(key_names) == 0
+                :(nothing)
+            else
+                result = :(nothing)
+                for (i, name) in enumerate(reverse(key_names))
+                    key_type = key_types[end-i+1]
+                    result = :(s === $(QuoteNode(name)) ? $(key_type) : $result)
+                end
+                result
+            end)
+        end
+
+        @inline Base.keytype(k::$(struct_name), s::Symbol) = Base.keytype(typeof(k), s)
+
         # Override getproperty and setproperty! for natural dot syntax access
         @inline function Base.getproperty(k::$(struct_name), name::Symbol)
             # Check if it's a managed key first
@@ -1200,7 +1209,7 @@ macro kvstore(struct_name, args...)
         @inline function Base.setproperty!(k::$(struct_name), name::Symbol, value)
             # Check if it's a managed key first
             if name in StaticKV.keynames(k)
-                return StaticKV.setindex!(k, name, value)
+                return StaticKV.setkey!(k, value, name)
             else
                 # Fall back to default field access for internal fields (like clock)
                 return setfield!(k, name, value)

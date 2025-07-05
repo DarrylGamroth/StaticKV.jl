@@ -24,8 +24,8 @@ function test_dot_syntax()
             @test obj.name == "Alice"
             
             # Test consistency with function calls
-            @test obj.name == getindex(obj, :name)
-            setindex!(obj, :age, 30)
+            @test obj.name == StaticKV.getkey(obj, :name)
+            StaticKV.setkey!(obj, 30, :age)
             @test obj.age == 30
         end
 
