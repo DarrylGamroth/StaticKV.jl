@@ -1,7 +1,7 @@
 name = "StaticKV"
 uuid = "5c25fbc6-c823-4e8d-82ee-a726f35d2972"
 authors = ["Darryl Gamroth <dgamroth@rubus.ca>"]
-version = "0.6.2"
+version = "0.6.3"
 
 [deps]
 Clocks = "6b5ade5d-6e95-4584-b343-73eec2e8782b"
