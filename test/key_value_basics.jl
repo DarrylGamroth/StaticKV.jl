@@ -13,11 +13,11 @@ function test_key_value_basics()
     t = TestBasic()
     
     # Test setting and getting keys
-    @test StaticKV.setkey!(t, "Alice", :name) == "Alice"
-    @test StaticKV.getkey(t, :name) == "Alice"
+    @test StaticKV.value!(t, "Alice", :name) == "Alice"
+    @test StaticKV.value(t, :name) == "Alice"
     
     # Test default values
-    @test StaticKV.getkey(t, :age) == 0
+    @test StaticKV.value(t, :age) == 0
     
     # Test isset functionality
     @test isset(t, :name) == true
@@ -26,7 +26,7 @@ function test_key_value_basics()
     
     # Test allkeysset
     @test allkeysset(t) == false
-    StaticKV.setkey!(t, 3.14, :optional)
+    StaticKV.value!(t, 3.14, :optional)
     @test allkeysset(t) == true
     
     # Test key type information
@@ -40,17 +40,17 @@ function test_key_value_basics()
     @test keytype(TestBasic, :optional) === Float64
     
     # Test error handling for non-existent keys
-    @test_throws ErrorException StaticKV.getkey(t, :nonexistent)
-    @test_throws ErrorException StaticKV.setkey!(t, "value", :nonexistent)
+    @test_throws ErrorException StaticKV.value(t, :nonexistent)
+    @test_throws ErrorException StaticKV.value!(t, "value", :nonexistent)
     @test isset(t, :nonexistent) == false
     @test keytype(t, :nonexistent) === nothing
     
     # Test error for accessing unset key
     t2 = TestBasic()
-    @test_throws ErrorException StaticKV.getkey(t2, :name)
+    @test_throws ErrorException StaticKV.value(t2, :name)
 
     @testset "with_key! does not mutate isbits in-place" begin
-        StaticKV.setkey!(t, 100, :age)
+        StaticKV.value!(t, 100, :age)
         @test_throws ErrorException with_key!(t, :age) do val
             val + 23
         end
@@ -58,13 +58,13 @@ function test_key_value_basics()
 
     @testset "with_key! mutates mutable key in-place" begin
         mt = MutableTest()
-        StaticKV.setkey!(mt, [1,2,3], :arr)
+        StaticKV.value!(mt, [1,2,3], :arr)
         result = with_key!(mt, :arr) do vec
             push!(vec, 99)
             vec
         end
         @test result == [1,2,3,99]
-        @test StaticKV.getkey(mt, :arr) == [1,2,3,99]
+        @test StaticKV.value(mt, :arr) == [1,2,3,99]
     end
 
 

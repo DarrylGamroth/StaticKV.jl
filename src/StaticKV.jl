@@ -43,7 +43,7 @@ using MacroTools
 
 # Export public API
 export @kvstore, AccessMode, AbstractStaticKV
-export resetkey!, isset, allkeysset
+export reset!, isset, allkeysset
 export is_readable, is_assignable, is_mutable, is_writable, last_update
 export with_key, with_key!, with_keys
 export keynames
@@ -161,28 +161,28 @@ end # AccessMode module
 
 
 """
-    getkey(kvstore, key)
-    getkey(kvstore, Val(key))
+    value(kvstore, key)
+    value(kvstore, Val(key))
 
 Get the value of a key from a key-value store.
 """
-function getkey end
+function value end
 
 """
-    setkey!(kvstore, value, key)
-    setkey!(kvstore, value, Val(key))
+    value!(kvstore, value, key)
+    value!(kvstore, value, Val(key))
 
 Set the value of a key in a key-value store.
 """
-function setkey! end
+function value! end
 
 """
-    resetkey!(kvstore, key)
-    resetkey!(kvstore, Val(key))
+    reset!(kvstore, key)
+    reset!(kvstore, Val(key))
 
 Reset a key to its unset state.
 """
-function resetkey! end
+function reset! end
 
 """
     isset(kvstore, key)
@@ -777,8 +777,8 @@ macro kvstore(struct_name, args...)
         timestamp_field = Symbol(:_, name, :_timestamp)
 
         push!(key_methods, quote
-            # Key-specific getkey method
-            @inline function StaticKV.getkey(k::$(struct_name), ::Val{$(QuoteNode(name))})
+            # Key-specific value method
+            @inline function StaticKV.value(k::$(struct_name), ::Val{$(QuoteNode(name))})
                 # Access check
                 _is_readable($(struct_name), Val($(QuoteNode(name)))) ||
                     throw(ErrorException("Key not readable"))
@@ -792,8 +792,8 @@ macro kvstore(struct_name, args...)
                 return callback(k, $(QuoteNode(name)), value)
             end
 
-            # Key-specific setkey! method
-            @inline function StaticKV.setkey!(k::$(struct_name), v, ::Val{$(QuoteNode(name))})
+            # Key-specific value! method
+            @inline function StaticKV.value!(k::$(struct_name), v, ::Val{$(QuoteNode(name))})
                 # Access check
                 _is_assignable($(struct_name), Val($(QuoteNode(name)))) ||
                     throw(ErrorException("Key not assignable"))
@@ -836,7 +836,7 @@ macro kvstore(struct_name, args...)
                 getfield(k, $(QuoteNode(timestamp_field)))
             end
 
-            @inline function StaticKV.resetkey!(k::$(struct_name), ::Val{$(QuoteNode(name))})
+            @inline function StaticKV.reset!(k::$(struct_name), ::Val{$(QuoteNode(name))})
                 _is_assignable($(struct_name), Val($(QuoteNode(name)))) ||
                     throw(ErrorException("Key not assignable"))
                 setfield!(k, $(QuoteNode(name)), nothing)
@@ -854,25 +854,25 @@ macro kvstore(struct_name, args...)
         end
 
         # Symbol-based dispatch functions (optimized if-else chains)
-        @inline function StaticKV.getkey(k::$(struct_name), s::Symbol)
+        @inline function StaticKV.value(k::$(struct_name), s::Symbol)
             $(if length(key_names) == 0
                 :(throw(ErrorException("Key not found")))
             else
                 result = :(throw(ErrorException("Key not found")))
                 for name in reverse(key_names)
-                    result = :(s === $(QuoteNode(name)) ? StaticKV.getkey(k, Val($(QuoteNode(name)))) : $result)
+                    result = :(s === $(QuoteNode(name)) ? StaticKV.value(k, Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
         end
 
-        @inline function StaticKV.setkey!(k::$(struct_name), v, s::Symbol)
+        @inline function StaticKV.value!(k::$(struct_name), v, s::Symbol)
             $(if length(key_names) == 0
                 :(throw(ErrorException("Key not found")))
             else
                 result = :(throw(ErrorException("Key not found")))
                 for name in reverse(key_names)
-                    result = :(s === $(QuoteNode(name)) ? StaticKV.setkey!(k, v, Val($(QuoteNode(name)))) : $result)
+                    result = :(s === $(QuoteNode(name)) ? StaticKV.value!(k, v, Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
@@ -950,13 +950,13 @@ macro kvstore(struct_name, args...)
             end)
         end
 
-        @inline function StaticKV.resetkey!(k::$(struct_name), s::Symbol)
+        @inline function StaticKV.reset!(k::$(struct_name), s::Symbol)
             $(if length(key_names) == 0
                 :(throw(ErrorException("Key not found")))
             else
                 result = :(throw(ErrorException("Key not found")))
                 for name in reverse(key_names)
-                    result = :(s === $(QuoteNode(name)) ? StaticKV.resetkey!(k, Val($(QuoteNode(name)))) : $result)
+                    result = :(s === $(QuoteNode(name)) ? StaticKV.reset!(k, Val($(QuoteNode(name)))) : $result)
                 end
                 result
             end)
@@ -1055,7 +1055,7 @@ macro kvstore(struct_name, args...)
             if !StaticKV.is_readable(k, s)
                 throw(ErrorException("Key :$s is not readable"))
             end
-            f(StaticKV.getkey(k, s))
+            f(StaticKV.value(k, s))
         end
 
         @inline function StaticKV.with_key!(f::Function, k::$(struct_name), s::Symbol)
@@ -1076,7 +1076,7 @@ macro kvstore(struct_name, args...)
             end
 
             # Get the current value and call the function
-            current_value = StaticKV.getkey(k, s)
+            current_value = StaticKV.value(k, s)
             result = f(current_value)
 
             # For in-place mutations, we don't reassign the key value.
@@ -1094,7 +1094,7 @@ macro kvstore(struct_name, args...)
                 if !StaticKV.is_readable(k, prop)
                     throw(ArgumentError("Key :\$prop is not readable"))
                 end
-                StaticKV.getkey(k, prop)
+                StaticKV.value(k, prop)
             end
 
             if length(keys) == 0
@@ -1118,15 +1118,15 @@ macro kvstore(struct_name, args...)
 
         # Base interface functions for backward compatibility
         @inline function Base.getindex(k::$(struct_name), key::Symbol)
-            StaticKV.getkey(k, key)
+            StaticKV.value(k, key)
         end
 
         @inline function Base.getindex(k::$(struct_name), keys::Symbol...)
-            tuple((StaticKV.getkey(k, key) for key in keys)...)
+            tuple((StaticKV.value(k, key) for key in keys)...)
         end
 
         @inline function Base.setindex!(k::$(struct_name), value, key::Symbol)
-            StaticKV.setkey!(k, value, key)
+            StaticKV.value!(k, value, key)
         end
 
         @inline function Base.setindex!(k::$(struct_name), values, keys::Symbol...)
@@ -1134,7 +1134,7 @@ macro kvstore(struct_name, args...)
                 throw(ArgumentError("Number of values (\$(length(values))) must match number of keys (\$(length(keys)))"))
             end
             for (key, val) in zip(keys, values)
-                StaticKV.setkey!(k, val, key)
+                StaticKV.value!(k, val, key)
             end
             values
         end
@@ -1145,7 +1145,7 @@ macro kvstore(struct_name, args...)
             readable_set_values = Any[]
             for name in StaticKV.keynames(k)
                 if StaticKV.isset(k, name) && StaticKV.is_readable(k, name)
-                    push!(readable_set_values, StaticKV.getkey(k, name))
+                    push!(readable_set_values, StaticKV.value(k, name))
                 end
             end
             tuple(readable_set_values...)
@@ -1154,12 +1154,12 @@ macro kvstore(struct_name, args...)
         @inline function Base.pairs(k::$(struct_name))
             # Only include pairs for keys that are set and readable
             # Use tuple comprehension to avoid allocations
-            tuple(((name, StaticKV.getkey(k, name)) for name in StaticKV.keynames(k) if StaticKV.isset(k, name) && StaticKV.is_readable(k, name))...)
+            tuple(((name, StaticKV.value(k, name)) for name in StaticKV.keynames(k) if StaticKV.isset(k, name) && StaticKV.is_readable(k, name))...)
         end
 
         @inline function Base.iterate(k::$(struct_name))
             # Get all readable, set keys as a tuple to avoid allocations
-            readable_set_keys = tuple(((name, StaticKV.getkey(k, name)) for name in StaticKV.keynames(k) if StaticKV.isset(k, name) && StaticKV.is_readable(k, name))...)
+            readable_set_keys = tuple(((name, StaticKV.value(k, name)) for name in StaticKV.keynames(k) if StaticKV.isset(k, name) && StaticKV.is_readable(k, name))...)
 
             if isempty(readable_set_keys)
                 return nothing
@@ -1188,7 +1188,7 @@ macro kvstore(struct_name, args...)
 
         @inline function Base.get(k::$(struct_name), key::Symbol, default)
             if StaticKV.isset(k, key) && StaticKV.is_readable(k, key)
-                StaticKV.getkey(k, key)
+                StaticKV.value(k, key)
             else
                 default
             end
@@ -1243,7 +1243,7 @@ macro kvstore(struct_name, args...)
         @inline function Base.getproperty(k::$(struct_name), name::Symbol)
             # Check if it's a managed key first
             if name in StaticKV.keynames(k)
-                return StaticKV.getkey(k, name)
+                return StaticKV.value(k, name)
             else
                 # Fall back to default field access for internal fields (like clock)
                 return getfield(k, name)
@@ -1253,7 +1253,7 @@ macro kvstore(struct_name, args...)
         @inline function Base.setproperty!(k::$(struct_name), name::Symbol, value)
             # Check if it's a managed key first
             if name in StaticKV.keynames(k)
-                return StaticKV.setkey!(k, value, name)
+                return StaticKV.value!(k, value, name)
             else
                 # Fall back to default field access for internal fields (like clock)
                 return setfield!(k, name, value)

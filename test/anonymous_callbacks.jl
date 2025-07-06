@@ -46,47 +46,47 @@ function test_anonymous_callbacks()
         t = TestAnonymousCallbacks()
         
         # Test get callback with anonymous function
-        @test StaticKV.getkey(t, :name) == "DEFAULT"  # Should be uppercase
-        StaticKV.setkey!(t, "test", :name)
-        @test StaticKV.getkey(t, :name) == "TEST"  # Should be uppercase
+        @test StaticKV.value(t, :name) == "DEFAULT"  # Should be uppercase
+        StaticKV.value!(t, "test", :name)
+        @test StaticKV.value(t, :name) == "TEST"  # Should be uppercase
         
         # Test set callback with anonymous function
-        StaticKV.setkey!(t, "USER@EXAMPLE.COM", :email)
-        @test StaticKV.getkey(t, :email) == "user@example.com"  # Should be lowercase
+        StaticKV.value!(t, "USER@EXAMPLE.COM", :email)
+        @test StaticKV.value(t, :email) == "user@example.com"  # Should be lowercase
         
         # Test both read and set callbacks
-        @test StaticKV.getkey(t, :score) == 20  # Default 10 * 2 from get callback
-        StaticKV.setkey!(t, -5, :score)
-        @test StaticKV.getkey(t, :score) == 0  # max(0, -5) = 0, then * 2 = 0
-        StaticKV.setkey!(t, 7, :score)
-        @test StaticKV.getkey(t, :score) == 14  # 7, then * 2 = 14
+        @test StaticKV.value(t, :score) == 20  # Default 10 * 2 from get callback
+        StaticKV.value!(t, -5, :score)
+        @test StaticKV.value(t, :score) == 0  # max(0, -5) = 0, then * 2 = 0
+        StaticKV.value!(t, 7, :score)
+        @test StaticKV.value(t, :score) == 14  # 7, then * 2 = 14
         
         # Test more complex anonymous function logic
-        @test StaticKV.getkey(t, :status) == :ACTIVE  # Default :active transformed to :ACTIVE
-        StaticKV.setkey!(t, :pending, :status)
-        @test StaticKV.getkey(t, :status) == :PENDING
-        StaticKV.setkey!(t, :inactive, :status)
-        @test StaticKV.getkey(t, :status) == :inactive  # No special transformation
-        StaticKV.setkey!(t, :unknown, :status)
-        @test StaticKV.getkey(t, :status) == :invalid  # Converted by set callback
+        @test StaticKV.value(t, :status) == :ACTIVE  # Default :active transformed to :ACTIVE
+        StaticKV.value!(t, :pending, :status)
+        @test StaticKV.value(t, :status) == :PENDING
+        StaticKV.value!(t, :inactive, :status)
+        @test StaticKV.value(t, :status) == :inactive  # No special transformation
+        StaticKV.value!(t, :unknown, :status)
+        @test StaticKV.value(t, :status) == :invalid  # Converted by set callback
         
         # Test comparing anonymous callbacks vs. named callbacks
         tnamed = TestCallback()
         
         # Set identical values to compare behavior
-        StaticKV.setkey!(tnamed, "hello", :uppercase)
-        StaticKV.setkey!(t, "hello", :name)
+        StaticKV.value!(tnamed, "hello", :uppercase)
+        StaticKV.value!(t, "hello", :name)
         
         # Both should have the same result despite different implementation
-        @test StaticKV.getkey(tnamed, :uppercase) == "HELLO"
-        @test StaticKV.getkey(t, :name) == "HELLO"
+        @test StaticKV.value(tnamed, :uppercase) == "HELLO"
+        @test StaticKV.value(t, :name) == "HELLO"
         
         # Test with more complex scenario
-        StaticKV.setkey!(tnamed, 5, :transformed)  # Will be multiplied by 2 on write, divided by 2 on read
-        StaticKV.setkey!(t, 5, :score)  # Will be unchanged on write (>0), multiplied by 2 on read
+        StaticKV.value!(tnamed, 5, :transformed)  # Will be multiplied by 2 on write, divided by 2 on read
+        StaticKV.value!(t, 5, :score)  # Will be unchanged on write (>0), multiplied by 2 on read
         
         # Both should have similar behavior for positive values but through different mechanisms
-        @test StaticKV.getkey(tnamed, :transformed) == 5
-        @test StaticKV.getkey(t, :score) == 10
+        @test StaticKV.value(tnamed, :transformed) == 5
+        @test StaticKV.value(t, :score) == 10
     end
 end

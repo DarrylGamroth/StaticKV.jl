@@ -147,7 +147,7 @@ function test_kvstore_interface()
         @test length(empty_bag) == 5  # All properties are now set
         
         # Reset a key
-        resetkey!(empty_bag, :custom_read)
+        reset!(empty_bag, :custom_read)
         @test length(empty_bag) == 4
     end
     
@@ -172,7 +172,7 @@ function test_kvstore_interface()
         @test get(get_bag, :custom_read, "default") == "READ: original"
         
         # Test default value for unset key
-        resetkey!(get_bag, :string_key)
+        reset!(get_bag, :string_key)
         @test get(get_bag, :string_key, "was_reset") == "was_reset"
         
         # Nonexistent key returns default
@@ -183,7 +183,7 @@ function test_kvstore_interface()
         # @test get(bag, :write_only, :default) == :default
         
         # Reset a key and test default
-        resetkey!(bag, :string_key)
+        reset!(bag, :string_key)
         @test get(bag, :string_key, "was_reset") == "was_reset"
         
         # Nonexistent key returns default

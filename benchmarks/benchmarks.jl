@@ -60,9 +60,9 @@ setindex!(callback_sensor, 0x95, :quality)
 
 # Benchmark basic getindex operations
 println("Get key (Val dispatch):")
-@btime StaticKV.getkey($fast_sensor, $(Val(:value)))
-@btime StaticKV.getkey($fast_sensor, $(Val(:quality)))
-@btime StaticKV.getkey($fast_sensor, $(Val(:is_valid)))
+@btime StaticKV.value($fast_sensor, $(Val(:value)))
+@btime StaticKV.value($fast_sensor, $(Val(:quality)))
+@btime StaticKV.value($fast_sensor, $(Val(:is_valid)))
 
 println("\nGet key (Symbol dispatch):")
 @btime getindex($fast_sensor, :value)
@@ -70,9 +70,9 @@ println("\nGet key (Symbol dispatch):")
 @btime getindex($fast_sensor, :is_valid)
 
 println("\nSet key (Val dispatch):")
-@btime StaticKV.setkey!($fast_sensor, 99.0, $(Val(:value)))
-@btime StaticKV.setkey!($fast_sensor, 0xff, $(Val(:quality)))
-@btime StaticKV.setkey!($fast_sensor, false, $(Val(:is_valid)))
+@btime StaticKV.value!($fast_sensor, 99.0, $(Val(:value)))
+@btime StaticKV.value!($fast_sensor, 0xff, $(Val(:quality)))
+@btime StaticKV.value!($fast_sensor, false, $(Val(:is_valid)))
 
 println("\nSet key (Symbol dispatch):")
 @btime setindex!($fast_sensor, 99.0, :value)
@@ -170,9 +170,9 @@ function test_allocations()
     println("Allocations for basic operations:")
     
     # These should all be zero allocations
-    allocs_get_val = @allocated StaticKV.getkey(sensor, Val(:value))
+    allocs_get_val = @allocated StaticKV.value(sensor, Val(:value))
     allocs_get_sym = @allocated getindex(sensor, :value)
-    allocs_set_val = @allocated StaticKV.setkey!(sensor, 99.0, Val(:value))
+    allocs_set_val = @allocated StaticKV.value!(sensor, 99.0, Val(:value))
     allocs_set_sym = @allocated setindex!(sensor, 99.0, :value)
     allocs_is_set = @allocated isset(sensor, :value)
     allocs_metadata = @allocated keytype(sensor, :value)

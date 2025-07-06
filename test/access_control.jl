@@ -5,36 +5,36 @@ function test_access_control()
     # Test readable key
     @test is_readable(t, :readable) == true
     @test is_writable(t, :readable) == false
-    @test StaticKV.getkey(t, :readable) == "read-only"
-    @test_throws ErrorException StaticKV.setkey!(t, "new value", :readable)
-    @test_throws ErrorException resetkey!(t, :readable)  # Can't reset read-only key
+    @test StaticKV.value(t, :readable) == "read-only"
+    @test_throws ErrorException StaticKV.value!(t, "new value", :readable)
+    @test_throws ErrorException reset!(t, :readable)  # Can't reset read-only key
     
     # Test writable key
     @test is_readable(t, :writable) == false
     @test is_writable(t, :writable) == true
-    @test_throws ErrorException StaticKV.getkey(t, :writable)
-    @test StaticKV.setkey!(t, "new value", :writable) == "new value"
-    @test resetkey!(t, :writable) === nothing  # Can reset writable key
+    @test_throws ErrorException StaticKV.value(t, :writable)
+    @test StaticKV.value!(t, "new value", :writable) == "new value"
+    @test reset!(t, :writable) === nothing  # Can reset writable key
     @test isset(t, :writable) == false  # Now it should be unset
-    StaticKV.setkey!(t, "restored", :writable)  # Restore for later tests
+    StaticKV.value!(t, "restored", :writable)  # Restore for later tests
     
     # Test read-write key
     @test is_readable(t, :readwrite) == true
     @test is_writable(t, :readwrite) == true
-    @test StaticKV.getkey(t, :readwrite) == "both"
-    @test StaticKV.setkey!(t, "new value", :readwrite) == "new value"
-    @test StaticKV.getkey(t, :readwrite) == "new value"
-    @test resetkey!(t, :readwrite) === nothing  # Can reset read-write key
+    @test StaticKV.value(t, :readwrite) == "both"
+    @test StaticKV.value!(t, "new value", :readwrite) == "new value"
+    @test StaticKV.value(t, :readwrite) == "new value"
+    @test reset!(t, :readwrite) === nothing  # Can reset read-write key
     @test isset(t, :readwrite) == false  # Now it should be unset
-    @test_throws ErrorException StaticKV.getkey(t, :readwrite)  # Can't get unset key
-    StaticKV.setkey!(t, "restored", :readwrite)  # Restore for later tests
+    @test_throws ErrorException StaticKV.value(t, :readwrite)  # Can't get unset key
+    StaticKV.value!(t, "restored", :readwrite)  # Restore for later tests
     
     # Test no-access key
     @test is_readable(t, :none) == false
     @test is_writable(t, :none) == false
-    @test_throws ErrorException StaticKV.getkey(t, :none)
-    @test_throws ErrorException StaticKV.setkey!(t, "new value", :none)
-    @test_throws ErrorException resetkey!(t, :none)  # Can't reset no-access key
+    @test_throws ErrorException StaticKV.value(t, :none)
+    @test_throws ErrorException StaticKV.value!(t, "new value", :none)
+    @test_throws ErrorException reset!(t, :none)  # Can't reset no-access key
     
     # Test isset still works for non-readable keys
     @test isset(t, :writable) == true
@@ -82,26 +82,26 @@ function test_new_access_control_modes()
     @test is_assignable(t, :readonly) == false
     @test is_mutable(t, :readonly) == false
     @test is_writable(t, :readonly) == false  # Legacy function should map to assignable
-    @test StaticKV.getkey(t, :readonly) == "read-only"
-    @test_throws ErrorException StaticKV.setkey!(t, "new", :readonly)
-    @test_throws ErrorException resetkey!(t, :readonly)
+    @test StaticKV.value(t, :readonly) == "read-only"
+    @test_throws ErrorException StaticKV.value!(t, "new", :readonly)
+    @test_throws ErrorException reset!(t, :readonly)
 
     # Test ASSIGNABLE only
     @test is_readable(t, :assignable_only) == false
     @test is_assignable(t, :assignable_only) == true
     @test is_mutable(t, :assignable_only) == false
     @test is_writable(t, :assignable_only) == true  # Legacy function should work
-    @test_throws ErrorException StaticKV.getkey(t, :assignable_only)
-    @test StaticKV.setkey!(t, "new value", :assignable_only) == "new value"
-    @test resetkey!(t, :assignable_only) === nothing
+    @test_throws ErrorException StaticKV.value(t, :assignable_only)
+    @test StaticKV.value!(t, "new value", :assignable_only) == "new value"
+    @test reset!(t, :assignable_only) === nothing
 
     # Test MUTABLE only
     @test is_readable(t, :mutable_only) == false
     @test is_assignable(t, :mutable_only) == false
     @test is_mutable(t, :mutable_only) == true
     @test is_writable(t, :mutable_only) == false  # Should be false for mutable-only
-    @test_throws ErrorException StaticKV.getkey(t, :mutable_only)
-    @test_throws ErrorException StaticKV.setkey!(t, ["new"], :mutable_only)
+    @test_throws ErrorException StaticKV.value(t, :mutable_only)
+    @test_throws ErrorException StaticKV.value!(t, ["new"], :mutable_only)
     @test_throws ErrorException with_key!(v -> push!(v, "new"), t, :mutable_only)  # Can't read to mutate
 
     # Test READABLE | ASSIGNABLE
@@ -109,29 +109,29 @@ function test_new_access_control_modes()
     @test is_assignable(t, :read_assignable) == true
     @test is_mutable(t, :read_assignable) == false
     @test is_writable(t, :read_assignable) == true
-    @test StaticKV.getkey(t, :read_assignable) == "both"
-    @test StaticKV.setkey!(t, "new", :read_assignable) == "new"
-    @test StaticKV.getkey(t, :read_assignable) == "new"
-    @test resetkey!(t, :read_assignable) === nothing
+    @test StaticKV.value(t, :read_assignable) == "both"
+    @test StaticKV.value!(t, "new", :read_assignable) == "new"
+    @test StaticKV.value(t, :read_assignable) == "new"
+    @test reset!(t, :read_assignable) === nothing
 
     # Test READABLE | MUTABLE
     @test is_readable(t, :read_mutable) == true
     @test is_assignable(t, :read_mutable) == false
     @test is_mutable(t, :read_mutable) == true
     @test is_writable(t, :read_mutable) == false
-    @test StaticKV.getkey(t, :read_mutable) == ["initial"]
-    @test_throws ErrorException StaticKV.setkey!(t, ["new"], :read_mutable)
+    @test StaticKV.value(t, :read_mutable) == ["initial"]
+    @test_throws ErrorException StaticKV.value!(t, ["new"], :read_mutable)
     result = with_key!(v -> push!(v, "mutated"), t, :read_mutable)  # Should work for in-place mutation
     @test length(result) == 2  # push! returns the array, which now has 2 elements
-    @test StaticKV.getkey(t, :read_mutable) == ["initial", "mutated"]
+    @test StaticKV.value(t, :read_mutable) == ["initial", "mutated"]
 
     # Test ASSIGNABLE | MUTABLE
     @test is_readable(t, :assign_mutable) == false
     @test is_assignable(t, :assign_mutable) == true
     @test is_mutable(t, :assign_mutable) == true
     @test is_writable(t, :assign_mutable) == true
-    @test_throws ErrorException StaticKV.getkey(t, :assign_mutable)
-    @test StaticKV.setkey!(t, ["replaced"], :assign_mutable) == ["replaced"]
+    @test_throws ErrorException StaticKV.value(t, :assign_mutable)
+    @test StaticKV.value!(t, ["replaced"], :assign_mutable) == ["replaced"]
     @test_throws ErrorException with_key!(v -> push!(v, "mutated"), t, :assign_mutable)  # Can't read
 
     # Test full access (READABLE_ASSIGNABLE_MUTABLE)
@@ -139,21 +139,21 @@ function test_new_access_control_modes()
     @test is_assignable(t, :full_access) == true
     @test is_mutable(t, :full_access) == true
     @test is_writable(t, :full_access) == true
-    @test StaticKV.getkey(t, :full_access) == ["initial"]
-    @test StaticKV.setkey!(t, ["replaced"], :full_access) == ["replaced"]
-    @test StaticKV.getkey(t, :full_access) == ["replaced"]
+    @test StaticKV.value(t, :full_access) == ["initial"]
+    @test StaticKV.value!(t, ["replaced"], :full_access) == ["replaced"]
+    @test StaticKV.value(t, :full_access) == ["replaced"]
     result = with_key!(v -> push!(v, "mutated"), t, :full_access)
     @test length(result) == 2  # push! returns the array, which now has 2 elements
-    @test StaticKV.getkey(t, :full_access) == ["replaced", "mutated"]
+    @test StaticKV.value(t, :full_access) == ["replaced", "mutated"]
 
     # Test default access mode (should be READABLE_ASSIGNABLE_MUTABLE)
     @test is_readable(t, :default_access) == true
     @test is_assignable(t, :default_access) == true
     @test is_mutable(t, :default_access) == true
     @test is_writable(t, :default_access) == true
-    @test StaticKV.getkey(t, :default_access) == "default"
-    @test StaticKV.setkey!(t, "new", :default_access) == "new"
-    @test StaticKV.getkey(t, :default_access) == "new"
+    @test StaticKV.value(t, :default_access) == "default"
+    @test StaticKV.value!(t, "new", :default_access) == "new"
+    @test StaticKV.value(t, :default_access) == "new"
 end
 
 # Test Base.ismutable functionality
@@ -176,7 +176,7 @@ function test_base_ismutable()
     # Test with_key! works for non-isbits mutable keys
     result = with_key!(v -> push!(v, "new"), t, :full_access)
     @test length(result) == 2  # push! returns the array, which now has 2 elements
-    @test StaticKV.getkey(t, :full_access) == ["initial", "new"]
+    @test StaticKV.value(t, :full_access) == ["initial", "new"]
 end
 
 # Test legacy compatibility

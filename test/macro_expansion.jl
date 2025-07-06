@@ -185,10 +185,10 @@ function test_macro_expansion()
         @test :message_rate in keynames(config)
 
         # Test key values (ensure the URI matches what's in the ENV)
-        @test StaticKV.getkey(config, :DataURI1) == ENV["SUB_DATA_URI_1"]
-        @test StaticKV.getkey(config, :DataStreamID1) == 4
-        @test StaticKV.getkey(config, :message_count) == 0
-        @test StaticKV.getkey(config, :version) == 0x00000001
+        @test StaticKV.value(config, :DataURI1) == ENV["SUB_DATA_URI_1"]
+        @test StaticKV.value(config, :DataStreamID1) == 4
+        @test StaticKV.value(config, :message_count) == 0
+        @test StaticKV.value(config, :version) == 0x00000001
     end
     
     # Test nested macro usage
@@ -210,14 +210,14 @@ function test_macro_expansion()
         user = SecuredUser()
 
         # Test read-only key
-        @test_throws Exception StaticKV.setkey!(user, "admin", :username)
+        @test_throws Exception StaticKV.value!(user, "admin", :username)
         
         # Test writable keys
-        StaticKV.setkey!(user, "secret123", :password)
-        StaticKV.setkey!(user, "ADMIN@EXAMPLE.COM", :email)
+        StaticKV.value!(user, "secret123", :password)
+        StaticKV.value!(user, "ADMIN@EXAMPLE.COM", :email)
         
         # Test value transformation via callbacks
-        @test StaticKV.getkey(user, :email) == "admin@example.com"
-        @test StaticKV.getkey(user, :password) == "********"
+        @test StaticKV.value(user, :email) == "admin@example.com"
+        @test StaticKV.value(user, :password) == "********"
     end
 end

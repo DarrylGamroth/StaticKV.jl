@@ -45,32 +45,32 @@ function test_allocations()
 
     # Function barriers for proper allocation testing
     function test_isbits_get_keyerty(obj, field, val)
-        StaticKV.setkey!(obj, val, field)
-        allocs = @allocated StaticKV.getkey(obj, field)
-        @info "$(field) StaticKV.getkey allocations: $(allocs) bytes"
+        StaticKV.value!(obj, val, field)
+        allocs = @allocated StaticKV.value(obj, field)
+        @info "$(field) StaticKV.value allocations: $(allocs) bytes"
         allocs2 = @allocated isset(obj, field)
         @test allocs == 0
         @test allocs2 == 0
     end
     
     function test_isbits_set_keyerty(obj, field, val)
-        allocs = @allocated StaticKV.setkey!(obj, val, field)
-        @info "$(field) StaticKV.setkey! allocations: $(allocs) bytes"
+        allocs = @allocated StaticKV.value!(obj, val, field)
+        @info "$(field) StaticKV.value! allocations: $(allocs) bytes"
         @test allocs == 0
     end
 
     # Warm up functions to ensure proper precompilation
     @info "Warming up functions..."
-    StaticKV.getkey(t1, :int_val)
-    StaticKV.setkey!(t1, 100, :int_val)
+    StaticKV.value(t1, :int_val)
+    StaticKV.value!(t1, 100, :int_val)
     isset(t1, :int_val)
-    StaticKV.getkey(t2, :int_val)
+    StaticKV.value(t2, :int_val)
     with_key(x -> x + 1, t1, :int_val)
     with_key!(v -> (v[1] = 1; v), t1, :vector_val)
     with_keys((i, f) -> i + f, t1, :int_val, :float_val)
 
     # Only keep one comprehensive isbits allocation testset (removes redundancy)
-    @testset "StaticKV.getkey allocation - isbits (all)" begin
+    @testset "StaticKV.value allocation - isbits (all)" begin
         for (field, val) in (
             :bool_val => false,
             :char_val => 'z',
@@ -95,7 +95,7 @@ function test_allocations()
         end
     end
 
-    @testset "StaticKV.setkey! allocation - isbits (all)" begin
+    @testset "StaticKV.value! allocation - isbits (all)" begin
         for (field, val) in (
             :bool_val => true,
             :char_val => 'y',
@@ -122,11 +122,11 @@ function test_allocations()
 
     # Keep non-isbits and callback/mutable type allocation tests
     @testset "Symbol allocation" begin
-        allocs1 = @allocated StaticKV.getkey(t1, :symbol_val)
-        @info "Symbol StaticKV.getkey allocations: $(allocs1)"
+        allocs1 = @allocated StaticKV.value(t1, :symbol_val)
+        @info "Symbol StaticKV.value allocations: $(allocs1)"
         @test allocs1 == 0
-        allocs2 = @allocated StaticKV.setkey!(t1, :new_symbol, :symbol_val)
-        @info "Symbol StaticKV.setkey! allocations: $(allocs2)"
+        allocs2 = @allocated StaticKV.value!(t1, :new_symbol, :symbol_val)
+        @info "Symbol StaticKV.value! allocations: $(allocs2)"
         @test allocs2 == 0
         allocs3 = @allocated isset(t1, :symbol_val)
         @info "Symbol isset allocations: $(allocs3)"
@@ -134,10 +134,10 @@ function test_allocations()
     end
 
     @testset "String allocation" begin
-        allocs1 = @allocated StaticKV.getkey(t1, :string_val)
-        @info "String StaticKV.getkey allocations: $allocs1"
-        allocs2 = @allocated StaticKV.setkey!(t1, "new_string", :string_val)
-        @info "String StaticKV.setkey! allocations: $allocs2"
+        allocs1 = @allocated StaticKV.value(t1, :string_val)
+        @info "String StaticKV.value allocations: $allocs1"
+        allocs2 = @allocated StaticKV.value!(t1, "new_string", :string_val)
+        @info "String StaticKV.value! allocations: $allocs2"
         allocs3 = @allocated isset(t1, :string_val)
         @test allocs1 == 0
         @test allocs2 == 0
@@ -145,10 +145,10 @@ function test_allocations()
     end
 
     @testset "Vector allocation" begin
-        allocs1 = @allocated StaticKV.getkey(t1, :vector_val)
-        @info "Vector StaticKV.getkey allocations: $allocs1"
-        allocs2 = @allocated StaticKV.setkey!(t1, [4, 5, 6], :vector_val)
-        @info "Vector StaticKV.setkey! allocations: $allocs2"
+        allocs1 = @allocated StaticKV.value(t1, :vector_val)
+        @info "Vector StaticKV.value allocations: $allocs1"
+        allocs2 = @allocated StaticKV.value!(t1, [4, 5, 6], :vector_val)
+        @info "Vector StaticKV.value! allocations: $allocs2"
         allocs3 = @allocated isset(t1, :vector_val)
         @test allocs1 == 0
         # Do not require allocs2 == 0: assigning a new array always allocates
@@ -156,10 +156,10 @@ function test_allocations()
     end
 
     @testset "Matrix allocation" begin
-        allocs1 = @allocated StaticKV.getkey(t1, :matrix_val)
-        @info "Matrix StaticKV.getkey allocations: $allocs1"
-        allocs2 = @allocated StaticKV.setkey!(t1, [5.0 6.0; 7.0 8.0], :matrix_val)
-        @info "Matrix StaticKV.setkey! allocations: $allocs2"
+        allocs1 = @allocated StaticKV.value(t1, :matrix_val)
+        @info "Matrix StaticKV.value allocations: $allocs1"
+        allocs2 = @allocated StaticKV.value!(t1, [5.0 6.0; 7.0 8.0], :matrix_val)
+        @info "Matrix StaticKV.value! allocations: $allocs2"
         allocs3 = @allocated isset(t1, :matrix_val)
         @test allocs1 == 0
         # Do not require allocs2 == 0: assigning a new array always allocates
@@ -190,10 +190,10 @@ function test_allocations()
     end
 
     @testset "Custom callbacks allocation" begin
-        allocs = @allocated StaticKV.getkey(t2, :int_val)
+        allocs = @allocated StaticKV.value(t2, :int_val)
         @test allocs == 0
         @info "Custom int callback allocations: $allocs"
-        allocs = @allocated StaticKV.getkey(t2, :any_val)
+        allocs = @allocated StaticKV.value(t2, :any_val)
         # Note: stringify callback allocates because it creates a new string
         @info "Custom any->string callback allocations: $allocs"
         # Don't test allocs == 0 for string conversion as it inherently allocates
@@ -206,8 +206,8 @@ function test_allocations()
     end
 
     @testset "with_keys allocation - vector and matrix" begin
-        StaticKV.setkey!(t1, [1, 2, 3], :vector_val)
-        StaticKV.setkey!(t1, [1.0 2.0; 3.0 4.0], :matrix_val)
+        StaticKV.value!(t1, [1, 2, 3], :vector_val)
+        StaticKV.value!(t1, [1.0 2.0; 3.0 4.0], :matrix_val)
         allocs = @allocated with_keys((v, m) -> (v .= v .* 2; m .= m .+ 10), t1, :vector_val, :matrix_val)
         @info "with_keys (vector, matrix) allocations: $allocs"
         @test allocs == 0
