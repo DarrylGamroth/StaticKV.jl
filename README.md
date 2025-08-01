@@ -1,5 +1,8 @@
 # StaticKV.jl
 
+[![CI](https://github.com/DarrylGamroth/StaticKV.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/DarrylGamroth/StaticKV.jl/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/DarrylGamroth/StaticKV.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/DarrylGamroth/StaticKV.jl)
+
 A high-performance Julia package that provides a macro-based system for creating static key-value stores with compile-time metadata. This package creates **concrete, non-parametric structs** that are easy to use as fields in other structs while maintaining zero-allocation key access.
 
 ## Features
