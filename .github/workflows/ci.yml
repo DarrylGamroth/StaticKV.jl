@@ -64,7 +64,7 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: Add PackageRegistry
         run: |
-          julia -e 'using Pkg; Pkg.Registry.add(url="https://github.com/DarrylGamroth/PackageRegistry.git")'
+          julia -e 'using Pkg; Pkg.Registry.add(Pkg.RegistrySpec(url="https://github.com/DarrylGamroth/PackageRegistry.git"))'
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - uses: julia-actions/julia-processcoverage@v1
