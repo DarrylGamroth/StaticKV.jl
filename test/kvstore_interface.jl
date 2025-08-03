@@ -209,7 +209,8 @@ function test_kvstore_interface()
             @test iswritable(bag, prop) == is_writable(bag, prop)
         end
         
-        @test_throws ErrorException isreadable(bag, :nonexistent)
-        @test_throws ErrorException iswritable(bag, :nonexistent)
+        # Nonexistent keys should return false (not throw exceptions)
+        @test isreadable(bag, :nonexistent) == false
+        @test iswritable(bag, :nonexistent) == false
     end
 end

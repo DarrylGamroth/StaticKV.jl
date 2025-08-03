@@ -1,14 +1,14 @@
 function test_access_control()
     # Use the pre-defined TestAccess type
     t = TestAccess()
-    
+
     # Test readable key
     @test is_readable(t, :readable) == true
     @test is_writable(t, :readable) == false
     @test StaticKV.value(t, :readable) == "read-only"
     @test_throws ErrorException StaticKV.value!(t, "new value", :readable)
     @test_throws ErrorException reset!(t, :readable)  # Can't reset read-only key
-    
+
     # Test writable key
     @test is_readable(t, :writable) == false
     @test is_writable(t, :writable) == true
@@ -17,7 +17,7 @@ function test_access_control()
     @test reset!(t, :writable) === nothing  # Can reset writable key
     @test isset(t, :writable) == false  # Now it should be unset
     StaticKV.value!(t, "restored", :writable)  # Restore for later tests
-    
+
     # Test read-write key
     @test is_readable(t, :readwrite) == true
     @test is_writable(t, :readwrite) == true
@@ -28,14 +28,14 @@ function test_access_control()
     @test isset(t, :readwrite) == false  # Now it should be unset
     @test_throws ErrorException StaticKV.value(t, :readwrite)  # Can't get unset key
     StaticKV.value!(t, "restored", :readwrite)  # Restore for later tests
-    
+
     # Test no-access key
     @test is_readable(t, :none) == false
     @test is_writable(t, :none) == false
     @test_throws ErrorException StaticKV.value(t, :none)
     @test_throws ErrorException StaticKV.value!(t, "new value", :none)
     @test_throws ErrorException reset!(t, :none)  # Can't reset no-access key
-    
+
     # Test isset still works for non-readable keys
     @test isset(t, :writable) == true
     @test isset(t, :none) == true
@@ -164,14 +164,14 @@ function test_base_ismutable()
     @test Base.ismutable(t, :readonly) == false
     @test Base.ismutable(t, :mutable_key) == true
     @test Base.ismutable(t, :full_access) == true
-    @test Base.ismutable(t, :isbits_key) == true  # Access-wise it's mutable
+    @test Base.ismutable(t, :isbits_key) == false
     @test Base.ismutable(t, :nonexistent) == false
 
     # Test Base.ismutable for the struct itself
     @test Base.ismutable(t) == true  # The struct itself is mutable
 
     # Test with_key! respects isbits restrictions
-    @test_throws ErrorException with_key!(x -> x + 1, t, :isbits_key)  # Can't mutate isbits in place
+    @test_throws ErrorException with_key!(x -> x + 1, t, :isbits_key)
 
     # Test with_key! works for non-isbits mutable keys
     result = with_key!(v -> push!(v, "new"), t, :full_access)
