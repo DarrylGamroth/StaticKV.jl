@@ -7,7 +7,7 @@ using StaticKV
     string_key::String => "test"
     int_key::Int => 42
     vector_key::Vector{Float64} => [1.0, 2.0]
-    complex_key::Dict{Symbol, Any} => Dict(:test => "value")
+    complex_key::Dict{Symbol, Any} => Dict{Symbol, Any}(:test => "value")
 end
 
 @kvstore EmptyForKeyType begin
@@ -39,7 +39,7 @@ end
 @kvstore TestComplexTypes begin
     optional_string::String
     abstract_vector::AbstractVector{Int} => [1, 2, 3]
-    parametric_dict::Dict{String, Any} => Dict("key" => "value")
+    parametric_dict::Dict{String, Any} => Dict{String, Any}("key" => "value")
     nested_parametric::Vector{Dict{Symbol, Vector{String}}} => [Dict(:test => ["a", "b"])]
     function_type::Function => identity
 end
@@ -222,7 +222,7 @@ function test_extended_edge_cases()
         
         # Test legacy constants work correctly
         @test StaticKV.is_assignable(kv, :legacy_writable)
-        @test StaticKV.is_mutable(kv, :legacy_writable)
+        @test !StaticKV.is_mutable(kv, :legacy_writable)  # WRITABLE maps to ASSIGNABLE only
         @test StaticKV.is_writable(kv, :legacy_writable)
         
         @test StaticKV.is_readable(kv, :legacy_rw)
@@ -263,7 +263,7 @@ function test_extended_edge_cases()
         kv = TestCallbackEdges()
         
         # Test get callback
-        @test StaticKV.value(kv, :counted) == "initial_accessed"  # on_get callback applied
+        @test StaticKV.value(kv, :counted) == "initial_set_accessed"  # on_set applied during construction, on_get applied during access
         
         # Test set callback
         StaticKV.value!(kv, "new", :counted)

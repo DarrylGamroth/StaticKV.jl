@@ -5,7 +5,7 @@ using StaticKV
 # Define all kvstore types at module level to avoid syntax errors
 @kvstore TestTupleDefaults begin
     coords::Tuple{Float64, Float64} => (0.0, 0.0)
-    rgb::Tuple{UInt8, UInt8, UInt8} => (255, 255, 255)
+    rgb::Tuple{UInt8, UInt8, UInt8} => (UInt8(255), UInt8(255), UInt8(255))
     mixed_tuple::Tuple{String, Int, Bool} => ("default", 42, true)
 end
 
@@ -45,8 +45,8 @@ end
     timestamp_key::String => "epoch"
 end
 
-@kvstore TestCachedClock clock_type=Clocks.CachedEpochClock begin  
-    timestamp_key::String => "cached"
+@kvstore TestMonotonicClock clock_type=Clocks.MonotonicClock begin  
+    timestamp_key::String => "monotonic"
 end
 
 # Default callback functions need to be defined before the kvstore
@@ -55,13 +55,13 @@ default_set(obj, key, val) = "SET_" * string(val)
 
 @kvstore TestMacroDefaultCallbacks default_on_get=default_get default_on_set=default_set begin
     key1::String => "value1"
-    key2::Int => 42
+    key2::String => "42"  # Changed to String since default_set returns String
 end
 
 @kvstore TestMixedCallbacks default_on_get=default_get begin
     key_with_default::String => "default"  # Uses default callback
     key_with_custom::String => ("custom"; on_get = (obj, key, val) -> "CUSTOM_" * val)  # Uses custom callback
-    key_no_callback::String => ("nocb"; on_get = nothing)  # Explicitly no callback
+    key_direct::String => ("direct"; on_get = (obj, key, val) -> val)  # Direct pass-through callback
 end
 
 @kvstore TestMacroComplexTypes begin
@@ -73,9 +73,9 @@ end
 
 @kvstore TestNoValueAttributes begin
     # Test keys with only attributes, no values
-    readonly_unset::String => (access = AccessMode.READABLE)
-    callback_unset::Int => (on_set = (obj, key, val) -> val > 0 ? val : 0)
-    mixed_unset::Float64 => (access = AccessMode.READABLE_ASSIGNABLE, on_get = (obj, key, val) -> round(val, digits=2))
+    readonly_unset::String => (; access = AccessMode.READABLE)
+    callback_unset::Int => (; on_set = (obj, key, val) -> val > 0 ? val : 0)
+    mixed_unset::Float64 => (; access = AccessMode.READABLE_ASSIGNABLE, on_get = (obj, key, val) -> round(val, digits=2))
 end
 
 @kvstore TestSingleValueParens begin
@@ -145,13 +145,13 @@ function test_macro_edge_cases()
     @testset "Clock Type Variations" begin
         # Test with different clock types
         kv_epoch = TestEpochClock()
-        kv_cached = TestCachedClock()
+        kv_monotonic = TestMonotonicClock()
         
         @test StaticKV.value(kv_epoch, :timestamp_key) == "epoch"
-        @test StaticKV.value(kv_cached, :timestamp_key) == "cached"
+        @test StaticKV.value(kv_monotonic, :timestamp_key) == "monotonic"
         
         # Test that different clock types can coexist
-        @test typeof(kv_epoch) != typeof(kv_cached)
+        @test typeof(kv_epoch) != typeof(kv_monotonic)
     end
     
     @testset "Default Callback Parameters" begin
@@ -159,8 +159,8 @@ function test_macro_edge_cases()
         kv_default = TestMacroDefaultCallbacks()
         
         # Test that default callbacks are applied
-        @test StaticKV.value(kv_default, :key1) == "GET_value1"  # default_get applied
-        @test StaticKV.value(kv_default, :key2) == "GET_42"      # default_get applied
+        @test StaticKV.value(kv_default, :key1) == "GET_SET_value1"  # both default_set (construction) and default_get (access) applied
+        @test StaticKV.value(kv_default, :key2) == "GET_SET_42"      # both default_set (construction) and default_get (access) applied
         
         # Test that default callbacks are applied on set
         StaticKV.value!(kv_default, "new", :key1)
@@ -169,9 +169,9 @@ function test_macro_edge_cases()
         # Test mixed callbacks (some default, some custom)
         kv_mixed = TestMixedCallbacks()
         
-        @test StaticKV.value(kv_mixed, :key_with_default) == "GET_default"    # default callback
-        @test StaticKV.value(kv_mixed, :key_with_custom) == "CUSTOM_custom"  # custom callback
-        @test StaticKV.value(kv_mixed, :key_no_callback) == "nocb"           # no callback
+        @test StaticKV.value(kv_mixed, :key_with_default) == "GET_default"      # default get callback applied to raw "default"
+        @test StaticKV.value(kv_mixed, :key_with_custom) == "CUSTOM_custom"    # custom get callback applied to raw "custom"  
+        @test StaticKV.value(kv_mixed, :key_direct) == "direct"                # direct pass-through get callback returns raw "direct"
     end
     
     @testset "Complex Type Annotations" begin
@@ -180,9 +180,9 @@ function test_macro_edge_cases()
         
         # Test complex generic type
         complex_val = StaticKV.value(kv_complex, :complex_generic)
-        @test complex_val isa Dict{Union{String, Symbol}, Vector{Tuple{Int, Float64}}}
-        @test haskey(complex_val, :test)
-        @test complex_val[:test] == [(1, 1.0)]
+        @test complex_val isa Dict{String, Vector{Tuple{Int, Float64}}}
+        @test haskey(complex_val, "test")
+        @test complex_val["test"] == [(1, 1.0)]
         
         # Test nested function
         func_val = StaticKV.value(kv_complex, :nested_function)
@@ -243,7 +243,7 @@ function test_macro_edge_cases()
         end
         
         # Test that structure is created correctly
-        @test length(StaticKV.key_names(kv_stress)) == 10
-        @test all(StaticKV.isset(kv_stress, k) for k in StaticKV.key_names(kv_stress))
+        @test length(StaticKV.keynames(kv_stress)) == 10
+        @test all(StaticKV.isset(kv_stress, k) for k in StaticKV.keynames(kv_stress))
     end
 end

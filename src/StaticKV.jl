@@ -1195,17 +1195,34 @@ macro kvstore(struct_name, args...)
         end
 
         @inline function Base.isreadable(k::$(struct_name), key::Symbol)
-            StaticKV.is_readable(k, key)
+            # Check if key exists first, return false for nonexistent keys
+            if haskey(k, key)
+                StaticKV.is_readable(k, key)
+            else
+                false
+            end
         end
 
         @inline function Base.iswritable(k::$(struct_name), key::Symbol)
-            StaticKV.is_writable(k, key)
+            # Check if key exists first, return false for nonexistent keys
+            if haskey(k, key)
+                StaticKV.is_writable(k, key)
+            else
+                false
+            end
         end
 
         @inline function Base.ismutable(k::$(struct_name), key::Symbol)
             # Check if key exists and is mutable
             if haskey(k, key)
-                StaticKV.is_mutable(k, key)
+                # First check if key has mutable access
+                if StaticKV.is_mutable(k, key)
+                    # Check if key type is isbits - isbits types are not mutable even with mutable access
+                    key_type = StaticKV.keytype(k, key)
+                    return key_type !== nothing && !isbitstype(key_type)
+                else
+                    return false
+                end
             else
                 false
             end
