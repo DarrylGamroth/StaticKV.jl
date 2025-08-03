@@ -2,12 +2,52 @@
 using Test
 using StaticKV
 
+# Define all kvstore types at top level
+@kvstore EmptyKVStore begin
+end
+
+@kvstore TestShowKV begin
+    name::String
+    age::Int => 25
+    height::Float64
+    score::Float32 => 85.5f0
+    active::Bool => true
+    data::Vector{Int} => [1, 2, 3, 4, 5]
+    readonly::String => ("test"; access = AccessMode.READABLE)
+    writeonly::String => ("hidden"; access = AccessMode.ASSIGNABLE)
+    unset_key::String  # This key will remain unset
+end
+
+@kvstore TestLongValues begin
+    long_string::String
+    long_vector::Vector{Int}
+end
+
+@kvstore TestAllAccessModes begin
+    none_access::String => ("none"; access = AccessMode.NONE)
+    readable::String => ("readable"; access = AccessMode.READABLE)
+    assignable::String => ("assignable"; access = AccessMode.ASSIGNABLE)
+    mutable::String => ("mutable"; access = AccessMode.MUTABLE)
+    readable_assignable::String => ("ra"; access = AccessMode.READABLE | AccessMode.ASSIGNABLE)
+    readable_mutable::String => ("rm"; access = AccessMode.READABLE | AccessMode.MUTABLE)
+    assignable_mutable::String => ("am"; access = AccessMode.ASSIGNABLE | AccessMode.MUTABLE)
+    full_access::String => ("full"; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE)
+end
+
+@kvstore SingleKeyKV begin
+    single::String => "value"
+end
+
+@kvstore ComplexTypesKV begin
+    nested_dict::Dict{Symbol, Vector{String}} => Dict{Symbol, Vector{String}}(:test => ["a", "b"])
+    tuple_field::Tuple{Int, String, Bool} => (42, "test", false)
+    complex_num::Complex{Float64} => 1.0 + 2.0im
+end
+
 function test_base_show()
     # Test Base.show methods for different kvstore configurations
     
     # Test empty kvstore show
-    @kvstore EmptyKVStore begin
-    end
     
     empty_kv = EmptyKVStore()
     
@@ -25,17 +65,6 @@ function test_base_show()
     @test contains(output, "EmptyKVStore 0/0 keys set")
     
     # Test kvstore with mixed set/unset keys
-    @kvstore TestShowKV begin
-        name::String
-        age::Int => 25
-        height::Float64
-        score::Float32 => 85.5f0
-        active::Bool => true
-        data::Vector{Int} => [1, 2, 3, 4, 5]
-        readonly::String => ("test"; access = AccessMode.READABLE)
-        writeonly::String => ("hidden"; access = AccessMode.ASSIGNABLE)
-    end
-    
     kv = TestShowKV()
     kv[:name] = "Alice Smith"
     kv[:height] = 165.5
@@ -57,6 +86,7 @@ function test_base_show()
     @test contains(output, "data")
     @test contains(output, "readonly")
     @test contains(output, "writeonly")
+    @test contains(output, "unset_key")
     
     # Check type annotations
     @test contains(output, "::String")
@@ -93,14 +123,9 @@ function test_base_show()
     output = String(take!(io))
     @test contains(output, "TestShowKV")
     # Should show count of set keys vs total keys
-    @test occursin(r"TestShowKV \d+/8 keys set", output)
+    @test occursin(r"TestShowKV \d+/9 keys set", output)
     
     # Test show with long values (truncation)
-    @kvstore TestLongValues begin
-        long_string::String
-        long_vector::Vector{Int}
-    end
-    
     kv_long = TestLongValues()
     # Create a very long string (more than 35 characters)
     long_str = "This is a very long string that should be truncated in the display output because it exceeds the limit"
@@ -117,17 +142,6 @@ function test_base_show()
     @test contains(output, "...")
     
     # Test show with all possible access modes
-    @kvstore TestAllAccessModes begin
-        none_access::String => ("none"; access = AccessMode.NONE)
-        readable::String => ("readable"; access = AccessMode.READABLE)
-        assignable::String => ("assignable"; access = AccessMode.ASSIGNABLE)
-        mutable::String => ("mutable"; access = AccessMode.MUTABLE)
-        readable_assignable::String => ("ra"; access = AccessMode.READABLE | AccessMode.ASSIGNABLE)
-        readable_mutable::String => ("rm"; access = AccessMode.READABLE | AccessMode.MUTABLE)
-        assignable_mutable::String => ("am"; access = AccessMode.ASSIGNABLE | AccessMode.MUTABLE)
-        full_access::String => ("full"; access = AccessMode.READABLE_ASSIGNABLE_MUTABLE)
-    end
-    
     kv_access = TestAllAccessModes()
     
     io = IOBuffer()
@@ -141,10 +155,6 @@ function test_base_show()
     @test contains(output, "[RW]")  # READABLE_ASSIGNABLE_MUTABLE (shows as RW)
     
     # Test edge case: kvstore with only one key
-    @kvstore SingleKeyKV begin
-        single::String => "value"
-    end
-    
     single_kv = SingleKeyKV()
     
     io = IOBuffer()
@@ -160,12 +170,6 @@ function test_base_show()
     @test contains(output, "SingleKeyKV 1/1 keys set")
     
     # Test with complex nested types
-    @kvstore ComplexTypesKV begin
-        nested_dict::Dict{Symbol, Vector{String}} => Dict{Symbol, Vector{String}}(:test => ["a", "b"])
-        tuple_field::Tuple{Int, String, Bool} => (42, "test", false)
-        complex_num::Complex{Float64} => 1.0 + 2.0im
-    end
-    
     complex_kv = ComplexTypesKV()
     
     io = IOBuffer()
