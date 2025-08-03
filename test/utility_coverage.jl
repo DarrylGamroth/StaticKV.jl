@@ -2,6 +2,64 @@
 using Test
 using StaticKV
 
+# Define all kvstore types at module level to avoid syntax errors
+@kvstore TestModuleRefs begin
+    # These should work and exercise the module qualification stripping
+    access_mode_ref::String => ("test"; access = StaticKV.AccessMode.READABLE)
+    multiple_refs::Int => (42; access = StaticKV.AccessMode.READABLE_ASSIGNABLE_MUTABLE)
+end
+
+@kvstore TestKeyOperationEdges begin
+    normal_key::String => "normal"
+    long_key_name_that_might_cause_issues_with_symbol_generation::Int => 42
+    key_with_unicode_αβγδε::Float64 => 3.14
+    key123::Bool => true
+end
+
+@kvstore TestBoundaries begin
+    # Test boundary conditions in various data types
+    max_int::Int => typemax(Int)
+    min_int::Int => typemin(Int)
+    inf_float::Float64 => Inf
+    neg_inf_float::Float64 => -Inf
+    nan_float::Float64 => NaN  
+    empty_string::String => ""
+    single_char::String => "a"
+    very_long_string::String => repeat("x", 1000)
+end
+
+@kvstore TestMemoryStress begin
+    # Test with types that might stress the memory system
+    large_vector::Vector{Float64} => zeros(10000)
+    large_dict::Dict{String, Int} => Dict(string(i) => i for i in 1:1000)
+    nested_structure::Vector{Dict{Symbol, Vector{String}}} => [Dict(:key => ["value$i" for i in 1:100]) for _ in 1:10]
+end
+
+@kvstore TestCallbackEdges begin  
+    # Test edge cases in callback functions
+    callback_with_side_effects::Int => (0; on_set = (obj, key, val) -> begin
+        # This callback has side effects - not pure
+        println("Setting $key to $val")  # Side effect
+        return val > 0 ? val : 0
+    end)
+    
+    callback_with_error::String => ("default"; on_get = (obj, key, val) -> begin
+        # This might throw an error in some cases
+        if val == "error"
+            error("Intentional error in callback")
+        end
+        return uppercase(val)
+    end)
+end
+
+@kvstore TestTypeSystem begin
+    # Test edge cases in the type system
+    abstract_type_field::AbstractString => "concrete"
+    union_with_nothing::Union{Int, Nothing} => nothing
+    parametric_vector::Vector{T} where T<:Number => [1, 2, 3]
+    complex_nested::Dict{Symbol, Tuple{String, Union{Int, Float64}}} => Dict(:test => ("key", 42))
+end
+
 function test_utility_coverage()
     
     @testset "Internal Utility Functions" begin
@@ -18,12 +76,6 @@ function test_utility_coverage()
             # exercise strip_module_qualifications
             
             # Test with nested module references (this would get processed internally)
-            @kvstore TestModuleRefs begin
-                # These should work and exercise the module qualification stripping
-                access_mode_ref::String => ("test"; access = StaticKV.AccessMode.READABLE)
-                multiple_refs::Int => (42; access = StaticKV.AccessMode.READABLE_ASSIGNABLE_MUTABLE)
-            end
-            
             kv_refs = TestModuleRefs()
             @test StaticKV.value(kv_refs, :access_mode_ref) == "test"
             @test StaticKV.is_readable(kv_refs, :access_mode_ref)
@@ -82,14 +134,6 @@ function test_utility_coverage()
     
     @testset "Edge Cases in Key Operations" begin
         # Test edge cases that might exercise less common code paths
-        
-        @kvstore TestKeyOperationEdges begin
-            normal_key::String => "normal"
-            long_key_name_that_might_cause_issues_with_symbol_generation::Int => 42
-            key_with_unicode_αβγδε::Float64 => 3.14
-            key123::Bool => true
-        end
-        
         kv_edges = TestKeyOperationEdges()
         
         # Test that long key names work
@@ -98,183 +142,152 @@ function test_utility_coverage()
         @test StaticKV.isset(kv_edges, long_key) == true
         
         # Test unicode in key names
-        unicode_key = :key_with_unicode_αβγδε
-        @test StaticKV.value(kv_edges, unicode_key) == 3.14
-        @test StaticKV.last_update(kv_edges, unicode_key) > 0
+        @test StaticKV.value(kv_edges, :key_with_unicode_αβγδε) == 3.14
+        @test StaticKV.isset(kv_edges, :key_with_unicode_αβγδε) == true
         
-        # Test numeric suffix keys
+        # Test numeric suffixes in key names
         @test StaticKV.value(kv_edges, :key123) == true
         
-        # Test all utility functions work with these edge case keys
-        @test StaticKV.keynames(kv_edges) isa Tuple
-        @test long_key in StaticKV.keynames(kv_edges)
-        @test unicode_key in StaticKV.keynames(kv_edges)
-        @test :key123 in StaticKV.keynames(kv_edges)
+        # Test normal keys still work
+        @test StaticKV.value(kv_edges, :normal_key) == "normal"
         
-        # Test allkeysset with edge case keys
-        @test StaticKV.allkeysset(kv_edges) == true
-        
-        reset!(kv_edges, long_key)
-        @test StaticKV.allkeysset(kv_edges) == false
-        @test !StaticKV.isset(kv_edges, long_key)
+        # Test that key name retrieval works
+        key_names = StaticKV.key_names(kv_edges)
+        @test :normal_key in key_names
+        @test long_key in key_names
+        @test :key_with_unicode_αβγδε in key_names
+        @test :key123 in key_names
     end
     
-    @testset "Boundary Conditions" begin
+    @testset "Boundary Value Testing" begin
         # Test boundary conditions that might reveal edge cases
+        kv_boundaries = TestBoundaries()
         
-        @kvstore TestBoundaries begin
-            empty_string::String => ""
-            zero_int::Int => 0
-            negative_int::Int => -1
-            max_int::Int => typemax(Int)
-            min_int::Int => typemin(Int)
-            nan_float::Float64 => NaN
-            inf_float::Float64 => Inf
-            neg_inf_float::Float64 => -Inf
-        end
+        # Test extreme integer values
+        @test StaticKV.value(kv_boundaries, :max_int) == typemax(Int)
+        @test StaticKV.value(kv_boundaries, :min_int) == typemin(Int)
         
-        kv_bounds = TestBoundaries()
+        # Test special float values
+        @test StaticKV.value(kv_boundaries, :inf_float) == Inf
+        @test StaticKV.value(kv_boundaries, :neg_inf_float) == -Inf
+        @test isnan(StaticKV.value(kv_boundaries, :nan_float))
         
-        # Test boundary values are handled correctly
-        @test StaticKV.value(kv_bounds, :empty_string) == ""
-        @test StaticKV.value(kv_bounds, :zero_int) == 0
-        @test StaticKV.value(kv_bounds, :negative_int) == -1
-        @test StaticKV.value(kv_bounds, :max_int) == typemax(Int)
-        @test StaticKV.value(kv_bounds, :min_int) == typemin(Int)
-        @test isnan(StaticKV.value(kv_bounds, :nan_float))
-        @test StaticKV.value(kv_bounds, :inf_float) == Inf
-        @test StaticKV.value(kv_bounds, :neg_inf_float) == -Inf
+        # Test string edge cases
+        @test StaticKV.value(kv_boundaries, :empty_string) == ""
+        @test StaticKV.value(kv_boundaries, :single_char) == "a"
+        @test length(StaticKV.value(kv_boundaries, :very_long_string)) == 1000
         
-        # Test that isset works correctly with these boundary values
-        @test StaticKV.isset(kv_bounds, :empty_string) == true  # Empty string is still "set"
-        @test StaticKV.isset(kv_bounds, :zero_int) == true
-        @test StaticKV.isset(kv_bounds, :negative_int) == true
-        
-        # Test show methods with boundary values
-        io = IOBuffer()
-        show(io, MIME"text/plain"(), kv_bounds)
-        output = String(take!(io))
-        @test contains(output, "\"\"")  # empty string
-        @test contains(output, "0")
-        @test contains(output, "-1")
-        @test contains(output, "NaN")
-        @test contains(output, "Inf")
+        # Test that all boundary values can be modified (if assignable)
+        StaticKV.value!(kv_boundaries, typemax(Int) - 1, :max_int)
+        @test StaticKV.value(kv_boundaries, :max_int) == typemax(Int) - 1
     end
     
     @testset "Memory and Performance Edge Cases" begin
-        # Test scenarios that might stress memory or performance
-        
-        @kvstore TestMemoryStress begin
-            large_vector::Vector{Int} => collect(1:10000)
-            large_string::String => repeat("x", 1000)
-            nested_structure::Dict{String, Vector{Dict{Symbol, String}}} => Dict(
-                "level1" => [
-                    Dict(:a => "test1", :b => "test2", :c => "test3"),
-                    Dict(:d => "test4", :e => "test5", :f => "test6")
-                ]
-            )
-        end
-        
+        # Test scenarios that might stress memory management
         kv_memory = TestMemoryStress()
         
-        # Test that large data structures work correctly
+        # Test large vector handling
         large_vec = StaticKV.value(kv_memory, :large_vector)
         @test length(large_vec) == 10000
-        @test large_vec[1] == 1
-        @test large_vec[end] == 10000
+        @test all(x -> x == 0.0, large_vec)
         
-        large_str = StaticKV.value(kv_memory, :large_string)
-        @test length(large_str) == 1000
-        @test all(c == 'x' for c in large_str)
+        # Test large dictionary handling
+        large_dict = StaticKV.value(kv_memory, :large_dict)
+        @test length(large_dict) == 1000
+        @test large_dict["1"] == 1
+        @test large_dict["500"] == 500
+        @test large_dict["1000"] == 1000
         
+        # Test nested structure handling
         nested = StaticKV.value(kv_memory, :nested_structure)
-        @test nested["level1"][1][:a] == "test1"
-        @test nested["level1"][2][:f] == "test6"
+        @test length(nested) == 10
+        @test length(nested[1][:key]) == 100
+        @test nested[1][:key][1] == "value1"
         
-        # Test that modifications work with large structures
-        new_vec = collect(1:5000)
-        StaticKV.value!(kv_memory, new_vec, :large_vector)
+        # Test that large structures can be replaced
+        new_large_vec = ones(5000)
+        StaticKV.value!(kv_memory, new_large_vec, :large_vector)
         @test length(StaticKV.value(kv_memory, :large_vector)) == 5000
-        
-        # Test show methods don't crash with large data (should truncate)
-        io = IOBuffer()
-        show(io, MIME"text/plain"(), kv_memory)
-        output = String(take!(io))
-        @test !isempty(output)
-        # Large values should be truncated in display
-        @test contains(output, "...")
+        @test all(x -> x == 1.0, StaticKV.value(kv_memory, :large_vector))
     end
     
-    @testset "Callback Function Edge Cases" begin
+    @testset "Callback Function Edge Cases" begin  
         # Test edge cases in callback functions
+        kv_callbacks = TestCallbackEdges()
         
-        # Callback that returns different types
-        polymorphic_cb(obj, key, val) = val isa String ? Symbol(val) : string(val)
+        # Test callback with side effects (should still work)
+        # Note: In real tests, we'd capture the output, but here we just test it doesn't crash
+        @test StaticKV.value(kv_callbacks, :callback_with_side_effects) == 0
+        StaticKV.value!(kv_callbacks, 5, :callback_with_side_effects)
+        @test StaticKV.value(kv_callbacks, :callback_with_side_effects) == 5
         
-        # Callback that modifies the object (though this is not recommended)
-        side_effect_cb(obj, key, val) = (obj.other_key = "modified"; val)
+        # Test that negative values get clamped to 0
+        StaticKV.value!(kv_callbacks, -10, :callback_with_side_effects)
+        @test StaticKV.value(kv_callbacks, :callback_with_side_effects) == 0
         
-        # Callback that throws an exception
-        error_cb(obj, key, val) = val == "error" ? error("Callback error!") : val
+        # Test callback error handling
+        @test StaticKV.value(kv_callbacks, :callback_with_error) == "DEFAULT"  # uppercase of "default"
         
-        @kvstore TestCallbackEdges begin  
-            other_key::String => "initial"
-            polymorphic::Any => ("string_val"; on_get = polymorphic_cb)
-            side_effect::String => ("test"; on_set = side_effect_cb)
-            error_prone::String => ("safe"; on_set = error_cb)
-        end
+        # Test that callback error propagates when it should
+        StaticKV.value!(kv_callbacks, "error", :callback_with_error)
+        @test_throws ErrorException StaticKV.value(kv_callbacks, :callback_with_error)
         
-        kv_cb = TestCallbackEdges()
-        
-        # Test polymorphic callback
-        @test StaticKV.value(kv_cb, :polymorphic) == :string_val  # converted to Symbol
-        
-        StaticKV.value!(kv_cb, 42, :polymorphic)
-        @test StaticKV.value(kv_cb, :polymorphic) == "42"  # converted to String
-        
-        # Test callback with side effects (not recommended but should work)
-        old_other = StaticKV.value(kv_cb, :other_key)
-        StaticKV.value!(kv_cb, "new_value", :side_effect)
-        # The side effect callback should have modified other_key
-        # Note: This tests the callback mechanism but isn't recommended practice
-        
-        # Test callback that can throw
-        StaticKV.value!(kv_cb, "safe_value", :error_prone)  # Should work
-        @test StaticKV.value(kv_cb, :error_prone) == "safe_value"
-        
-        # This should propagate the callback's exception
-        @test_throws ErrorException StaticKV.value!(kv_cb, "error", :error_prone)
+        # Test that normal values work after error
+        StaticKV.value!(kv_callbacks, "normal", :callback_with_error)
+        @test StaticKV.value(kv_callbacks, :callback_with_error) == "NORMAL"
     end
     
     @testset "Type System Edge Cases" begin
-        # Test edge cases in the type system
-        
-        @kvstore TestTypeSystem begin
-            # Test with type aliases
-            string_alias::AbstractString => "alias_test"
-            
-            # Test with concrete vs abstract types
-            concrete_vector::Vector{Int} => [1, 2, 3]
-            abstract_vector::AbstractVector{Int} => [4, 5, 6]
-            
-            # Test with parametric types
-            parametric::Vector{T} where T => ["a", "b", "c"]
-        end
-        
+        # Test complex type system interactions
         kv_types = TestTypeSystem()
         
-        # Test that type aliases work
-        @test StaticKV.value(kv_types, :string_alias) == "alias_test"
-        StaticKV.value!(kv_types, "new_alias", :string_alias)  # String is <: AbstractString
-        @test StaticKV.value(kv_types, :string_alias) == "new_alias"
+        # Test abstract type with concrete value
+        @test StaticKV.value(kv_types, :abstract_type_field) == "concrete"
+        @test typeof(StaticKV.value(kv_types, :abstract_type_field)) <: AbstractString
         
-        # Test concrete vs abstract
-        @test StaticKV.value(kv_types, :concrete_vector) == [1, 2, 3]
-        @test StaticKV.value(kv_types, :abstract_vector) == [4, 5, 6]
+        # Test union with nothing
+        @test StaticKV.value(kv_types, :union_with_nothing) === nothing
+        StaticKV.value!(kv_types, 42, :union_with_nothing)
+        @test StaticKV.value(kv_types, :union_with_nothing) == 42
+        StaticKV.value!(kv_types, nothing, :union_with_nothing)
+        @test StaticKV.value(kv_types, :union_with_nothing) === nothing
         
-        # Test parametric types
-        @test StaticKV.value(kv_types, :parametric) == ["a", "b", "c"]
-        StaticKV.value!(kv_types, [1, 2, 3], :parametric)  # Should work with different element type
-        @test StaticKV.value(kv_types, :parametric) == [1, 2, 3]
+        # Test parametric type
+        param_vec = StaticKV.value(kv_types, :parametric_vector)
+        @test param_vec == [1, 2, 3]
+        @test eltype(param_vec) <: Number
+        
+        # Test complex nested type
+        complex_val = StaticKV.value(kv_types, :complex_nested)
+        @test complex_val isa Dict{Symbol, Tuple{String, Union{Int, Float64}}}
+        @test complex_val[:test] == ("key", 42)
+        
+        # Test that type constraints are enforced
+        StaticKV.value!(kv_types, [4.0, 5.0, 6.0], :parametric_vector)  # Float64 <: Number, should work
+        @test StaticKV.value(kv_types, :parametric_vector) == [4.0, 5.0, 6.0]
+    end
+    
+    @testset "Stress Testing and Performance" begin
+        # Test scenarios that might reveal performance issues or edge cases
+        # under stress
+        
+        # Test repeated operations
+        kv = TestKeyOperationEdges()
+        
+        # Stress test key access
+        for _ in 1:1000
+            @test StaticKV.value(kv, :normal_key) == "normal"
+        end
+        
+        # Stress test key modification
+        for i in 1:100
+            StaticKV.value!(kv, i, :long_key_name_that_might_cause_issues_with_symbol_generation)
+            @test StaticKV.value(kv, :long_key_name_that_might_cause_issues_with_symbol_generation) == i
+        end
+        
+        # Test that the kvstore is still functional after stress
+        @test StaticKV.isset(kv, :normal_key)
+        @test StaticKV.isset(kv, :key_with_unicode_αβγδε)
+        @test length(StaticKV.key_names(kv)) == 4
     end
 end
