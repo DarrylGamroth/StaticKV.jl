@@ -21,10 +21,9 @@ include("abstract_type.jl")
 # Include new comprehensive test files for improved coverage
 include("base_show_tests.jl")
 include("exception_tests.jl")
-# TODO: Fix @kvstore syntax errors in these files
-# include("extended_edge_cases.jl")
-# include("macro_edge_cases.jl")
-# include("utility_coverage.jl")
+include("extended_edge_cases.jl")
+include("macro_edge_cases.jl")
+include("utility_coverage.jl")
 
 # Run all tests
 @testset verbose=true "StaticKV.jl" begin
@@ -87,16 +86,15 @@ include("exception_tests.jl")
         test_exception_paths()
     end
     
-    # TODO: Re-enable after fixing @kvstore syntax errors
-    # @testset "Extended Edge Cases" begin
-    #     test_extended_edge_cases()
-    # end
-    # 
-    # @testset "Macro Edge Cases" begin
-    #     test_macro_edge_cases()
-    # end
-    # 
-    # @testset "Utility Coverage" begin
-    #     test_utility_coverage()
-    # end
+    @testset "Extended Edge Cases" begin
+        test_extended_edge_cases()
+    end
+    
+    @testset "Macro Edge Cases" begin
+        test_macro_edge_cases()
+    end
+    
+    @testset "Utility Coverage" begin
+        test_utility_coverage()
+    end
 end
