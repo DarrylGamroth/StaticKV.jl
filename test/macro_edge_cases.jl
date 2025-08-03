@@ -75,7 +75,7 @@ end
     # Test keys with only attributes, no values
     readonly_unset::String => (; access = AccessMode.READABLE)
     callback_unset::Int => (; on_set = (obj, key, val) -> val > 0 ? val : 0)
-    mixed_unset::Float64 => (; access = AccessMode.READABLE_ASSIGNABLE, on_get = (obj, key, val) -> round(val, digits=2))
+    mixed_unset::Float64 => (; access = AccessMode.READABLE | AccessMode.ASSIGNABLE, on_get = (obj, key, val) -> round(val, digits=2))
 end
 
 @kvstore TestSingleValueParens begin
