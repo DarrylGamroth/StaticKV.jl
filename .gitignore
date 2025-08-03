@@ -1,0 +1,10 @@
+# Julia coverage files
+*.cov
+
+# Other common Julia artifacts
+*.mem
+docs/build/
+deps/build.log
+deps/downloads/
+deps/src/
+deps/usr/
