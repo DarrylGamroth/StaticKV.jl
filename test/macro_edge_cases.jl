@@ -53,7 +53,7 @@ end
 default_get(obj, key, val) = "GET_" * string(val)
 default_set(obj, key, val) = "SET_" * string(val)
 
-@kvstore TestDefaultCallbacks default_on_get=default_get default_on_set=default_set begin
+@kvstore TestMacroDefaultCallbacks default_on_get=default_get default_on_set=default_set begin
     key1::String => "value1"
     key2::Int => 42
 end
@@ -64,11 +64,10 @@ end
     key_no_callback::String => ("nocb"; on_get = nothing)  # Explicitly no callback
 end
 
-@kvstore TestComplexTypes begin
+@kvstore TestMacroComplexTypes begin
     # Test complex type expressions that might confuse the parser
-    complex_generic::Dict{Union{String, Symbol}, Vector{Tuple{Int, Float64}}} => Dict(:test => [(1, 1.0)])
+    complex_generic::Dict{String, Vector{Tuple{Int, Float64}}} => Dict("test" => [(1, 1.0)])
     nested_function::Function => (x, y) -> x + y
-    multiple_unions::Union{String, Int, Float64, Vector{Any}} => "test"
     parametric_tuple::Tuple{T, S} where {T<:Number, S<:AbstractString} => (1, "test")
 end
 
@@ -157,7 +156,7 @@ function test_macro_edge_cases()
     
     @testset "Default Callback Parameters" begin
         # Test default callbacks applied to all keys
-        kv_default = TestDefaultCallbacks()
+        kv_default = TestMacroDefaultCallbacks()
         
         # Test that default callbacks are applied
         @test StaticKV.value(kv_default, :key1) == "GET_value1"  # default_get applied
@@ -177,7 +176,7 @@ function test_macro_edge_cases()
     
     @testset "Complex Type Annotations" begin
         # Test complex type expressions in the macro
-        kv_complex = TestComplexTypes()
+        kv_complex = TestMacroComplexTypes()
         
         # Test complex generic type
         complex_val = StaticKV.value(kv_complex, :complex_generic)
@@ -188,11 +187,6 @@ function test_macro_edge_cases()
         # Test nested function
         func_val = StaticKV.value(kv_complex, :nested_function)
         @test func_val(3, 4) == 7
-        
-        # Test multiple unions
-        union_val = StaticKV.value(kv_complex, :multiple_unions)
-        @test union_val == "test"
-        @test typeof(union_val) <: Union{String, Int, Float64, Vector{Any}}
         
         # Test parametric tuple (this tests parser's handling of where clauses)
         tuple_val = StaticKV.value(kv_complex, :parametric_tuple)

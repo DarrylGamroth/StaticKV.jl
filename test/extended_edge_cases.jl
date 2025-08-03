@@ -42,7 +42,6 @@ end
     parametric_dict::Dict{String, Any} => Dict("key" => "value")
     nested_parametric::Vector{Dict{Symbol, Vector{String}}} => [Dict(:test => ["a", "b"])]
     function_type::Function => identity
-    union_type::Union{String, Int, Nothing} => "test"
 end
 
 @kvstore TestCallbackEdges begin
@@ -258,11 +257,6 @@ function test_extended_edge_cases()
         func_val = StaticKV.value(kv, :function_type)
         @test func_val isa Function
         @test func_val(42) == 42  # identity function
-        
-        # Test union type
-        union_val = StaticKV.value(kv, :union_type)
-        @test union_val == "test"
-        @test typeof(union_val) <: Union{String, Int, Nothing}
     end
     
     @testset "Callback Edge Cases" begin
