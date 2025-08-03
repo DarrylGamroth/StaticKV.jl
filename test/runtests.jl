@@ -18,6 +18,13 @@ include("macro_expansion.jl")
 include("dot_syntax.jl")
 include("abstract_type.jl")
 
+# Include new comprehensive test files for improved coverage
+include("base_show_tests.jl")
+include("exception_tests.jl")
+include("extended_edge_cases.jl")
+include("macro_edge_cases.jl")
+include("utility_coverage.jl")
+
 # Run all tests
 @testset verbose=true "StaticKV.jl" begin
     @testset "Key-Value Store Basics" begin
@@ -69,5 +76,25 @@ include("abstract_type.jl")
     
     @testset "Abstract Type" begin
         test_abstract_type()
+    end
+    
+    @testset "Base.show Methods" begin
+        test_base_show()
+    end
+    
+    @testset "Exception Paths" begin
+        test_exception_paths()
+    end
+    
+    @testset "Extended Edge Cases" begin
+        test_extended_edge_cases()
+    end
+    
+    @testset "Macro Edge Cases" begin
+        test_macro_edge_cases()
+    end
+    
+    @testset "Utility Coverage" begin
+        test_utility_coverage()
     end
 end
