@@ -193,7 +193,7 @@ function test_extended_edge_cases()
     @testset "Complex Type Edge Cases" begin
         # Test with unusual but valid Julia types
         @kvstore TestComplexTypes begin
-            union_nothing::Union{String, Nothing} => nothing  # This should work (Nothing is allowed)
+            optional_string::String  # Test optional field (no Union needed)
             abstract_vector::AbstractVector{Int} => [1, 2, 3]
             parametric_dict::Dict{K, V} where {K, V} => Dict("key" => "value")
             nested_parametric::Vector{Dict{Symbol, Vector{String}}} => [Dict(:test => ["a", "b"])]
@@ -205,7 +205,7 @@ function test_extended_edge_cases()
         kv = TestComplexTypes()
         
         # Test that these complex types work
-        @test StaticKV.value(kv, :union_nothing) === nothing
+        @test !StaticKV.isset(kv, :optional_string)  # Test unset optional field
         @test StaticKV.value(kv, :abstract_vector) == [1, 2, 3]
         @test StaticKV.value(kv, :parametric_dict)["key"] == "value"
         @test StaticKV.value(kv, :nested_parametric)[1][:test] == ["a", "b"]
