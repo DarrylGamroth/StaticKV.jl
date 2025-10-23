@@ -29,21 +29,21 @@ function test_key_value_basics()
     StaticKV.value!(t, 3.14, :optional)
     @test allkeysset(t) == true
     
-    # Test key type information
-    @test keytype(t, :name) === String
-    @test keytype(t, :age) === Int
-    @test keytype(t, :optional) === Float64
+    # Test key value type information
+    @test valtype(t, :name) === String
+    @test valtype(t, :age) === Int
+    @test valtype(t, :optional) === Float64
     
-    # Test key type from type (not instance)
-    @test keytype(TestBasic, :name) === String
-    @test keytype(TestBasic, :age) === Int
-    @test keytype(TestBasic, :optional) === Float64
+    # Test value type from type (not instance)
+    @test valtype(TestBasic, :name) === String
+    @test valtype(TestBasic, :age) === Int
+    @test valtype(TestBasic, :optional) === Float64
     
     # Test error handling for non-existent keys
     @test_throws ErrorException StaticKV.value(t, :nonexistent)
     @test_throws ErrorException StaticKV.value!(t, "value", :nonexistent)
     @test isset(t, :nonexistent) == false
-    @test keytype(t, :nonexistent) === nothing
+    @test valtype(t, :nonexistent) === nothing
     
     # Test error for accessing unset key
     t2 = TestBasic()

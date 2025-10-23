@@ -19,11 +19,11 @@ A high-performance Julia package that provides a macro-based system for creating
 
 ## Key Benefits
 
-✅ **Concrete, non-parametric types** - Easy to use as struct fields
-✅ **Zero-allocation key access** - No memory allocations for get/set operations
-✅ **Compile-time callback optimization** - Default callbacks optimized away completely
-✅ **Type-stable usage** - Works perfectly in collections and as struct fields
-✅ **Named function callbacks** - Full support for custom callback functions
+- **Concrete, non-parametric types** - Easy to use as struct fields
+- **Zero-allocation key access** - No memory allocations for get/set operations
+- **Compile-time callback optimization** - Default callbacks optimized away completely
+- **Type-stable usage** - Works perfectly in collections and as struct fields
+- **Named function callbacks** - Full support for custom callback functions
 
 ## Installation
 
@@ -35,6 +35,129 @@ Pkg.add("StaticKV")
 ## Limitations
 
 - **No Union Types**: Union types (like `Union{Nothing, String}`) are not allowed as key types because they conflict with the internal representation of unset keys. The package uses `nothing` to represent unset keys, so Union types containing `Nothing` would create ambiguity.
+
+## API Levels: Internal vs External
+
+StaticKV provides two distinct API levels to support different use cases:
+
+### Internal API (StaticKV module functions)
+
+Use these functions in your implementation code where you need full control:
+
+```julia
+StaticKV.value(obj, key)         # Direct key read (NO access checks)
+StaticKV.value!(obj, value, key) # Direct key write (NO access checks)
+StaticKV.reset!(obj, key)        # Reset key to unset state (checks ASSIGNABLE)
+```
+
+These functions are intended for **internal use** within your package/module. `value` and `value!` bypass all access control checks, while `reset!` enforces ASSIGNABLE access. This is useful for:
+- Implementation logic that needs to update fields
+- Internal state management
+- System-level operations
+
+### External/Interface API (Base functions)
+
+Use these functions for public interfaces where you want strict access control:
+
+```julia
+getindex(obj, key) or obj[key]           # Respects access control
+setindex!(obj, value, key) or obj[key] = value  # Respects access control
+```
+
+These functions **enforce access control** modes, making them suitable for:
+- Public APIs
+- Messaging interfaces
+- External integrations
+- Any context where unauthorized access should be prevented
+
+### Example: Messaging System
+
+```julia
+@kvstore Message begin
+    # Readable externally, but only writable internally
+    payload::String => (; access = AccessMode.READABLE)
+    timestamp::Int => (; access = AccessMode.READABLE)
+end
+
+# Internal code (your implementation) - bypasses access control
+function process_incoming!(msg::Message, data::String)
+    StaticKV.value!(msg, data, :payload)        # Works - unchecked access
+    StaticKV.value!(msg, time(), :timestamp)    # Works - unchecked access
+end
+
+# External/public API (user code) - enforces access control
+function get_message_data(msg::Message)
+    msg[:payload]                               # Works - readable
+end
+
+function try_modify_message(msg::Message)
+    msg[:payload] = "hacked"                    # Throws error - read-only
+end
+```
+
+This two-tier approach prevents accidental misuse while giving you full control when needed.
+
+### Function Reference: All Ways to Access Keys
+
+StaticKV provides multiple function interfaces for accessing keys, all of which ultimately enforce the same access control rules:
+
+#### Internal API Functions
+```julia
+# Raw value access (NO access control checks - use in internal code only)
+StaticKV.value(obj, key)            # Direct read (bypasses READABLE check)
+StaticKV.value!(obj, value, key)    # Direct write (bypasses ASSIGNABLE check)
+
+# Other internal functions
+StaticKV.reset!(obj, key)           # Reset key to unset state (checks ASSIGNABLE)
+StaticKV.isset(obj, key)            # Check if key is set
+StaticKV.is_readable(obj, key)      # Check if key can be read
+StaticKV.is_assignable(obj, key)    # Check if key can be assigned
+StaticKV.is_mutable(obj, key)       # Check if key can be mutated in place
+```
+
+#### External/Interface API Functions
+```julia
+# Bracket notation (most convenient)
+obj[key]                # Calls Base.getindex(obj, key) → [checks READABLE] → StaticKV.value(obj, key)
+obj[key] = value        # Calls Base.setindex!(obj, value, key) → [checks ASSIGNABLE] → StaticKV.value!(obj, value, key)
+
+# Explicit function calls (more explicit)
+getindex(obj, key)           # Same as obj[key]
+setindex!(obj, value, key)   # Same as obj[key] = value
+
+# Dot notation (property-style)
+obj.key                 # Calls Base.getproperty(obj, :key) → Base.getindex(obj, :key) → [checks READABLE] → StaticKV.value(obj, :key)
+obj.key = value         # Calls Base.setproperty!(obj, :key, value) → Base.setindex!(obj, value, :key) → [checks ASSIGNABLE] → StaticKV.value!(obj, value, :key)
+```
+
+#### Function Call Hierarchy
+All external functions enforce access control before calling the raw internal `StaticKV.value` and `StaticKV.value!` functions:
+
+```
+obj[key]      → Base.getindex    → [checks READABLE] → StaticKV.value   
+obj.key       → Base.getproperty → Base.getindex → [checks READABLE] → StaticKV.value
+                                                                       ├→ Applies on_get callback
+                                                                       └→ Returns field value
+
+obj[key] = v  → Base.setindex!   → [checks ASSIGNABLE] → StaticKV.value!
+obj.key = v   → Base.setproperty → Base.setindex! → [checks ASSIGNABLE] → StaticKV.value!
+                                                                         ├→ Applies on_set callback
+                                                                         └→ Updates field + timestamp
+
+Internal (bypasses checks):
+  StaticKV.value(obj, key)       → Directly reads field, applies on_get
+  StaticKV.value!(obj, val, key) → Directly writes field, applies on_set
+```
+
+**Key Takeaway**: The choice between `obj[key]`, `obj.key`, or `getindex(obj, key)` is purely stylistic. 
+They all enforce the same access control checks before calling `StaticKV.value/value!`. 
+
+Use `StaticKV.value/value!` directly **only** in internal implementation code where you need to bypass 
+access control for legitimate reasons (e.g., internal state management, privileged operations).
+
+**Security Note**: Since `StaticKV.value/value!` bypass all access checks, they should be used carefully 
+and only within trusted code. For public-facing APIs, always use the external functions (`obj[key]`, etc.) 
+that enforce access control.
 
 ## Quick Start
 
@@ -65,41 +188,41 @@ person = Person()
 
 # The generated struct is concrete and can be used as fields
 struct Company
-    ceo::Person                                          # ✅ Concrete type, no parameters!
-    employees::Vector{Person}                            # ✅ Works in collections too
+    ceo::Person                                          # Concrete type, no parameters
+    employees::Vector{Person}                            # Works in collections
 end
 
 # Set keys
-setindex!(person, :name, "Alice")
-setindex!(person, :email, "alice@example.com")
-setindex!(person, :address, "123 Main St")
-setindex!(person, :data, ["item1", "item2"])
+person[:name] = "Alice"
+person[:email] = "ALICE@EXAMPLE.COM"
+person[:address] = "123 Main St"
+person[:data] = ["item1", "item2"]
 
 # Access keys
-println(getindex(person, :name))                          # "Alice"
-println(getindex(person, :address))                       # "REDACTED" (get callback applied)
-println(getindex(person, :email))                         # "alice@example.com" (stored lowercase)
+println(person[:name])                                  # "Alice"
+println(person[:address])                               # "REDACTED" (get callback applied)
+println(person[:email])                                 # "alice@example.com" (stored lowercase)
 
 # Mutate mutable keys in place
-with_key!(person, :data) do data
+StaticKV.with_key!(person, :data) do data
     push!(data, "item3")                                 # Modify the vector in place
 end
-println(getindex(person, :data))                          # ["item1", "item2", "item3"]
+println(person[:data])                                  # ["item1", "item2", "item3"]
 
 # Check key status
-println(isset(person, :name))                           # true
-println(is_readable(person, :age))                      # true
-println(is_assignable(person, :age))                    # false (read-only)
-println(is_mutable(person, :data))                      # true (can mutate in place)
+println(StaticKV.isset(person, :name))                  # true
+println(StaticKV.is_readable(person, :age))             # true
+println(StaticKV.is_assignable(person, :age))           # false (read-only)
+println(StaticKV.is_mutable(person, :data))             # true (can mutate in place)
 println(ismutable(person, :data))                       # true (Base.ismutable support)
 println(ismutable(person))                              # true (struct itself is mutable)
 
 # Reset a key to unset state
-resetindex!(person, :address)
-println(isset(person, :address))                        # false
-println(allkeysset(person))                             # false (address key was reset)
-println(is_readable(person, :email))                    # true
-println(is_assignable(person, :address))                # true
+StaticKV.reset!(person, :address)
+println(StaticKV.isset(person, :address))               # false
+println(StaticKV.allkeysset(person))                    # false (address key was reset)
+println(StaticKV.is_readable(person, :email))           # true
+println(StaticKV.is_assignable(person, :address))       # true
 ```
 
 ## Key Definition Syntax
@@ -312,44 +435,44 @@ end
 
 ```julia
 # Increment age using with_key!
-result = with_key!(person, :age) do age
+result = StaticKV.with_key!(person, :age) do age
     age + 1
 end
-setindex!(person, :age, result)                           # Need to explicitly update the key
+person[:age] = result                                   # Need to explicitly update the key
 
 # Mutate collections in place with with_key!
-with_key!(person, :data) do data_array
+StaticKV.with_key!(person, :data) do data_array
     push!(data_array, "new_item")                       # Modifies the array in place
     # Return value is ignored for in-place mutations
 end
 
 # Calculate numeric values without modifying keys
-average_score = with_keys(person, :age, :score) do age, score
+average_score = StaticKV.with_keys(person, :age, :score) do age, score
     (age + score) / 2                                   # Calculate average of age and score
 end
 
 # To update multiple keys, you need to get and set them individually
-name = getindex(person, :name) * " Smith"                 # Add surname
-age = getindex(person, :age) + 1                          # Increment age
-setindex!(person, :name, name)
-setindex!(person, :age, age)
+name = person[:name] * " Smith"                         # Add surname
+age = person[:age] + 1                                  # Increment age
+person[:name] = name
+person[:age] = age
 ```
 
 ### Key Metadata and Information
 
 ```julia
-# Get key type
-println(keytype(person, :age))                          # Int64
-println(keytype(person, :address))                      # String
+# Get key value type
+println(valtype(person, :age))                          # Int64
+println(valtype(person, :address))                      # String
 
 # Check when a key was last updated
-last_updated = last_update(person, :name)               # Timestamp in nanoseconds
+last_updated = StaticKV.last_update(person, :name)      # Timestamp in nanoseconds
 
 # Check access permissions
-println(is_readable(person, :address))                  # true
-println(is_assignable(person, :address))                # true  
-println(is_mutable(person, :data))                      # true (if data is a Vector)
-println(is_writable(person, :score))                    # true (legacy function)
+println(StaticKV.is_readable(person, :address))         # true
+println(StaticKV.is_assignable(person, :address))       # true  
+println(StaticKV.is_mutable(person, :data))             # true (if data is a Vector)
+println(StaticKV.is_writable(person, :score))           # true (legacy function)
 
 # Check mutability using Base.ismutable
 println(ismutable(person, :data))                       # true (key-specific mutability)
@@ -358,33 +481,44 @@ println(ismutable(person))                              # true (struct is mutabl
 
 ## Full API Documentation
 
-### Key Access
+### Key Access (External API)
 
-- `getindex(obj, key_name)`: Get a key value
-- `setindex!(obj, key_name, value)`: Set a key value
-- `resetindex!(obj, key_name)`: Reset a key to an unset state
-- `isset(obj, key_name)`: Check if a key is set (not `nothing`)
-- `allkeysset(obj)`: Check if all keys are set
-- `keytype(obj, key_name)`: Get a key's type
+- `obj[key]` or `getindex(obj, key)`: Get a key value (enforces READABLE)
+- `obj[key] = value` or `setindex!(obj, value, key)`: Set a key value (enforces ASSIGNABLE)
+- `obj.key` or `getproperty(obj, :key)`: Get a key value using dot syntax (enforces READABLE)
+- `obj.key = value` or `setproperty!(obj, :key, value)`: Set a key value using dot syntax (enforces ASSIGNABLE)
 
-### Key Information
+### Key Access (Internal API)
 
-- `is_readable(obj, key_name)`: Check if a key is readable
-- `is_assignable(obj, key_name)`: Check if a key can be assigned/replaced
-- `is_mutable(obj, key_name)`: Check if a key can be mutated in place
-- `is_writable(obj, key_name)`: Check if a key is writable (legacy: alias for `is_assignable`)
-- `last_update(obj, key_name)`: Get the timestamp of the last update
+- `StaticKV.value(obj, key)`: Direct key read (NO access checks)
+- `StaticKV.value!(obj, value, key)`: Direct key write (NO access checks)
+- `StaticKV.reset!(obj, key)`: Reset a key to unset state (enforces ASSIGNABLE)
+
+### Key Status
+
+- `StaticKV.isset(obj, key)`: Check if a key is set (not `nothing`)
+- `StaticKV.allkeysset(obj)`: Check if all keys are set
+- `valtype(obj, key)`: Get a key's value type
+
+### Key Permissions
+
+- `StaticKV.is_readable(obj, key)`: Check if a key is readable
+- `StaticKV.is_assignable(obj, key)`: Check if a key can be assigned/replaced
+- `StaticKV.is_mutable(obj, key)`: Check if a key can be mutated in place
+- `StaticKV.is_writable(obj, key)`: Check if a key is writable (legacy: alias for `is_assignable`)
+- `StaticKV.last_update(obj, key)`: Get the timestamp of the last update
 
 ### Base Interface Support
 
-- `Base.ismutable(obj, key_name)`: Check if a specific key is mutable (integrates with Julia's Base)
-- `Base.ismutable(obj)`: Check if the struct itself is mutable (always `true` for StaticKV structs)
+- `ismutable(obj, key)`: Check if a specific key is mutable (integrates with Julia's Base)
+- `ismutable(obj)`: Check if the struct itself is mutable (always `true` for StaticKV structs)
 
 ### Key Operations
 
-- `with_key(fn, obj, key_name)`: Apply a function to a key value (read-only)
-- `with_key!(fn, obj, key_name)`: Apply a function and update a mutable key
-- `with_keys(fn, obj, key_names...)`: Apply a function to multiple keys (read-only)
+- `StaticKV.with_key(fn, obj, key)`: Apply a function to a key value (read-only)
+- `StaticKV.with_key!(fn, obj, key)`: Apply a function to mutate a key in place
+- `StaticKV.with_keys(fn, obj, keys...)`: Apply a function to multiple keys (read-only)
+- `StaticKV.keynames(obj)`: Get a tuple of all key names
 
 ## License
 

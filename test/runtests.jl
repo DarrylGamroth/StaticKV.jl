@@ -17,6 +17,7 @@ include("kvstore_interface.jl")
 include("macro_expansion.jl")
 include("dot_syntax.jl")
 include("abstract_type.jl")
+include("api_levels.jl")
 
 # Include new comprehensive test files for improved coverage
 include("base_show_tests.jl")
@@ -76,6 +77,10 @@ include("utility_coverage.jl")
     
     @testset "Abstract Type" begin
         test_abstract_type()
+    end
+    
+    @testset "API Levels (Internal vs External)" begin
+        test_api_levels()
     end
     
     @testset "Base.show Methods" begin

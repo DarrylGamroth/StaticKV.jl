@@ -209,8 +209,9 @@ function test_macro_expansion()
     @testset "Access Control and Callbacks" begin
         user = SecuredUser()
 
-        # Test read-only key
-        @test_throws Exception StaticKV.value!(user, "admin", :username)
+        # Test read-only key - internal API bypasses, external API enforces
+        @test StaticKV.value!(user, "admin", :username) == "admin"  # Internal API bypasses check
+        @test_throws Exception user[:username] = "hacker"  # External API enforces READ-only
         
         # Test writable keys
         StaticKV.value!(user, "secret123", :password)

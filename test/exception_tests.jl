@@ -126,20 +126,20 @@ function test_exception_paths()
         # Test access control violations
         kv = TestAccessViolations()
         
-        # Test reading non-readable keys
-        @test_throws ErrorException StaticKV.value(kv, :writeonly)
-        @test_throws ErrorException StaticKV.value(kv, :none_access)
-        @test_throws ErrorException kv[:writeonly]  # Base.getindex
-        @test_throws ErrorException kv[:none_access]
+        # Test reading non-readable keys - internal API bypasses, external API enforces
+        @test StaticKV.value(kv, :writeonly) == "writeonly"  # Internal API bypasses READ check
+        @test StaticKV.value(kv, :none_access) == "none"  # Internal API bypasses access
+        @test_throws ErrorException kv[:writeonly]  # External API enforces READ
+        @test_throws ErrorException kv[:none_access]  # External API enforces READ
         
-        # Test writing non-assignable keys
-        @test_throws ErrorException StaticKV.value!(kv, "new", :readonly)
-        @test_throws ErrorException StaticKV.value!(kv, "new", :none_access)
-        @test_throws ErrorException StaticKV.value!(kv, "new", :mutable_only)
-        @test_throws ErrorException kv[:readonly] = "new"  # Base.setindex!
-        @test_throws ErrorException kv[:none_access] = "new"
+        # Test writing non-assignable keys - internal API bypasses, external API enforces
+        @test StaticKV.value!(kv, "new", :readonly) == "new"  # Internal API bypasses ASSIGNABLE check
+        @test StaticKV.value!(kv, "new", :none_access) == "new"  # Internal API bypasses access
+        @test StaticKV.value!(kv, "new", :mutable_only) == "new"  # Internal API bypasses ASSIGNABLE check
+        @test_throws ErrorException kv[:readonly] = "new"  # External API enforces ASSIGNABLE
+        @test_throws ErrorException kv[:none_access] = "new"  # External API enforces ASSIGNABLE
         
-        # Test resetting non-assignable keys
+        # Test resetting non-assignable keys - reset! checks ASSIGNABLE
         @test_throws ErrorException reset!(kv, :readonly)
         @test_throws ErrorException reset!(kv, :none_access)
         @test_throws ErrorException reset!(kv, :mutable_only)

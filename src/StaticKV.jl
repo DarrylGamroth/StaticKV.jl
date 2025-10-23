@@ -12,6 +12,95 @@ Creates concrete, type-safe structs that behave like key-value stores but with s
 - **Zero overhead**: Default callbacks optimized away completely
 - **Type-stable**: All operations fully optimized by Julia compiler
 - **Static keys**: Keys are known at compile time for maximum performance
+- **Two-tier API**: Internal API for implementation code, external API for public interfaces
+
+# API Levels
+
+StaticKV provides two levels of API access, with different function pairs for different use cases:
+
+## Internal API (StaticKV module functions)
+Use these in your implementation code where you need full control:
+
+### Raw Value Access (No access control checks)
+- `StaticKV.value(obj, key)` - Direct key read (NO access checks)
+- `StaticKV.value!(obj, value, key)` - Direct key write (NO access checks)
+
+**Note**: These functions bypass all access control checks. Use them only in internal
+implementation code where you need unconditional access. For checked access, use the
+external API functions below.
+
+## External/Interface API (Base functions)
+
+### Bracket Notation (Most convenient)
+- `obj[key]` - Calls `Base.getindex(obj, key)` internally
+- `obj[key] = value` - Calls `Base.setindex!(obj, value, key)` internally
+
+### Explicit Function Calls (More explicit)
+- `getindex(obj, key)` - Same as `obj[key]`, respects access control
+- `setindex!(obj, value, key)` - Same as `obj[key] = value`, respects access control
+
+### Dot Notation (Property-style access)
+- `obj.key` - Calls `Base.getproperty(obj, :key)` internally
+- `obj.key = value` - Calls `Base.setproperty!(obj, :key, value)` internally
+
+**All external functions** (`getindex`, `setindex!`, `getproperty`, `setproperty!`)
+enforce access control checks before calling `StaticKV.value` and `StaticKV.value!`.
+The choice between them is purely stylistic and depends on your API design preferences.
+
+## Function Call Hierarchy
+
+```
+External API (User-facing, with access control):
+  obj[key]           → Base.getindex(obj, key)      → [checks READABLE] → StaticKV.value(obj, key)
+  obj[key] = val     → Base.setindex!(obj, val, key) → [checks ASSIGNABLE] → StaticKV.value!(obj, val, key)
+  obj.key            → Base.getproperty(obj, :key)  → Base.getindex(obj, :key) → [checks READABLE] → StaticKV.value(obj, :key)
+  obj.key = val      → Base.setproperty!(obj, :key, val) → Base.setindex!(obj, val, :key) → [checks ASSIGNABLE] → StaticKV.value!(obj, val, :key)
+
+Internal API (Implementation code, NO access control):
+  StaticKV.value(obj, key)       → Direct field read, applies on_get callback
+  StaticKV.value!(obj, val, key) → Direct field write, applies on_set callback
+```
+
+## When to Use Which API
+
+### Use Internal API (`StaticKV.value/value!`) when:
+- Writing implementation code within your package/module
+- You need unconditional access bypassing access control
+- You're managing internal state that external code shouldn't modify
+- You want to avoid access control overhead in performance-critical paths
+
+### Use External API (`obj[key]` or `obj.key`) when:
+- Exposing a public interface to users
+- Building messaging systems or serialization layers
+- You want the access control to prevent unauthorized modifications
+- You want familiar Julia syntax for your users
+
+The external API enforces access control rules (READABLE, ASSIGNABLE, MUTABLE),
+while the internal API bypasses all checks for maximum performance and flexibility.
+
+# Common Use Case: Messaging Systems
+```julia
+@kvstore Message begin
+    # Readable externally, but only writable internally
+    payload::String => (; access = AccessMode.READABLE)
+    timestamp::Int => (; access = AccessMode.READABLE)
+end
+
+# Internal code (your implementation) - uses unchecked value/value!
+function process_incoming!(msg::Message, data::String)
+    StaticKV.value!(msg, data, :payload)           # Works - bypasses access control
+    StaticKV.value!(msg, time(), :timestamp)       # Works - bypasses access control
+end
+
+# External/public API (user code) - uses checked getindex/setindex!
+function get_message_data(msg::Message)
+    msg[:payload]                                   # Works - readable
+end
+
+function try_modify_message(msg::Message)
+    msg[:payload] = "hacked"                        # Throws error - read-only
+end
+```
 
 # Example
 ```julia
@@ -20,15 +109,15 @@ using StaticKV
 @kvstore Person begin
     name::String
     age::Int => (; access = AccessMode.READABLE)
-    email::String => (""; 
+    email::String => ("";
         on_get = (obj, key, val) -> "***@***.com",
         on_set = (obj, key, val) -> lowercase(val)
     )
 end
 
 person = Person()
-person[:name] = "Alice"        # Key-value syntax
-println(person[:name])         # "Alice"
+person[:name] = "Alice"        # External API (Base.setindex!)
+println(person[:name])         # External API (Base.getindex)
 
 # Can be used as concrete field types
 struct Company
@@ -374,11 +463,11 @@ function parse_key_def(expr)
             if value_expr.head == :tuple
                 # Handle (value; kwargs...) or (; kwargs...)
                 args = value_expr.args
-                
+
                 # Separate parameters (keyword arguments) from regular arguments
                 parameters = nothing
                 value_args = []
-                
+
                 for arg in args
                     if arg isa Expr && arg.head == :parameters
                         parameters = arg
@@ -397,7 +486,7 @@ function parse_key_def(expr)
                         push!(value_args, arg)
                     end
                 end
-                
+
                 # Set the value based on what we found
                 if !isnothing(parameters)
                     # We have keyword arguments, so extract only the value part
@@ -431,7 +520,7 @@ function parse_key_def(expr)
                 # This is how Julia parses (value; kwargs...) - as a block with parameters
                 block_args = value_expr.args
                 value_found = false
-                
+
                 for arg in block_args
                     if arg isa LineNumberNode
                         continue  # Skip line number nodes
@@ -448,7 +537,7 @@ function parse_key_def(expr)
                         throw(ErrorException("Unexpected expression in block: $arg"))
                     end
                 end
-                
+
                 if !value_found
                     result[:value] = nothing
                 end
@@ -668,7 +757,7 @@ macro kvstore(struct_name, args...)
 
     # Extract key information
     key_names = [k[:name] for k in props]
-    key_types = [k[:type] for k in props]
+    val_types = [k[:type] for k in props]
     key_values = [k[:value] for k in props]
     key_access = [k[:access] for k in props]
     key_get_cbs = [k[:on_get] for k in props]
@@ -681,7 +770,7 @@ macro kvstore(struct_name, args...)
     struct_fields = []
 
     # Add value fields
-    for (name, type) in zip(key_names, key_types)
+    for (name, type) in zip(key_names, val_types)
         push!(struct_fields, :($(name)::Union{Nothing,$(type)}))
     end
 
@@ -777,12 +866,8 @@ macro kvstore(struct_name, args...)
         timestamp_field = Symbol(:_, name, :_timestamp)
 
         push!(key_methods, quote
-            # Key-specific value method
+            # Key-specific value method (raw, no access checks)
             @inline function StaticKV.value(k::$(struct_name), ::Val{$(QuoteNode(name))})
-                # Access check
-                _is_readable($(struct_name), Val($(QuoteNode(name)))) ||
-                    throw(ErrorException("Key not readable"))
-
                 # Direct field access
                 value = getfield(k, $(QuoteNode(name)))
                 isnothing(value) && throw(ErrorException("Key not set"))
@@ -792,12 +877,8 @@ macro kvstore(struct_name, args...)
                 return callback(k, $(QuoteNode(name)), value)
             end
 
-            # Key-specific value! method
+            # Key-specific value! method (raw, no access checks)
             @inline function StaticKV.value!(k::$(struct_name), v, ::Val{$(QuoteNode(name))})
-                # Access check
-                _is_assignable($(struct_name), Val($(QuoteNode(name)))) ||
-                    throw(ErrorException("Key not assignable"))
-
                 # Compile-time callback (optimized away for defaults)
                 callback = _get_on_set($(struct_name), Val($(QuoteNode(name))))
                 transformed_value = callback(k, $(QuoteNode(name)), v)
@@ -1003,8 +1084,8 @@ macro kvstore(struct_name, args...)
                 timestamp = getfield(k, Symbol(:_, name, :_timestamp))
 
                 # Type info
-                key_type = StaticKV.keytype(k, name)
-                type_str = key_type === nothing ? "Any" : string(key_type)
+                val_type = valtype(k, name)
+                type_str = val_type === nothing ? "Any" : string(val_type)
 
                 # Access info
                 readable = StaticKV.is_readable(k, name)
@@ -1055,7 +1136,7 @@ macro kvstore(struct_name, args...)
             if !StaticKV.is_readable(k, s)
                 throw(ErrorException("Key :$s is not readable"))
             end
-            f(StaticKV.value(k, s))
+            f(Base.getindex(k, s))
         end
 
         @inline function StaticKV.with_key!(f::Function, k::$(struct_name), s::Symbol)
@@ -1070,13 +1151,13 @@ macro kvstore(struct_name, args...)
             end
 
             # Check if key type is isbits - if so, should throw error
-            key_type = StaticKV.keytype(k, s)
-            if key_type !== nothing && isbitstype(key_type)
+            val_type = valtype(k, s)
+            if val_type !== nothing && isbitstype(val_type)
                 throw(ErrorException("Cannot mutate isbits key :$s in place"))
             end
 
             # Get the current value and call the function
-            current_value = StaticKV.value(k, s)
+            current_value = Base.getindex(k, s)
             result = f(current_value)
 
             # For in-place mutations, we don't reassign the key value.
@@ -1094,7 +1175,7 @@ macro kvstore(struct_name, args...)
                 if !StaticKV.is_readable(k, prop)
                     throw(ArgumentError("Key :\$prop is not readable"))
                 end
-                StaticKV.value(k, prop)
+                Base.getindex(k, prop)
             end
 
             if length(keys) == 0
@@ -1116,16 +1197,26 @@ macro kvstore(struct_name, args...)
             end
         end
 
-        # Base interface functions for backward compatibility
+        # Base interface functions with access control
         @inline function Base.getindex(k::$(struct_name), key::Symbol)
+            # Access control check
+            StaticKV.is_readable(k, key) ||
+                throw(ErrorException("Key not readable"))
             StaticKV.value(k, key)
         end
 
         @inline function Base.getindex(k::$(struct_name), keys::Symbol...)
-            tuple((StaticKV.value(k, key) for key in keys)...)
+            tuple((begin
+                StaticKV.is_readable(k, key) ||
+                    throw(ErrorException("Key not readable"))
+                StaticKV.value(k, key)
+            end for key in keys)...)
         end
 
         @inline function Base.setindex!(k::$(struct_name), value, key::Symbol)
+            # Access control check
+            StaticKV.is_assignable(k, key) ||
+                throw(ErrorException("Key not assignable"))
             StaticKV.value!(k, value, key)
         end
 
@@ -1134,6 +1225,9 @@ macro kvstore(struct_name, args...)
                 throw(ArgumentError("Number of values (\$(length(values))) must match number of keys (\$(length(keys)))"))
             end
             for (key, val) in zip(keys, values)
+                # Access control check
+                StaticKV.is_assignable(k, key) ||
+                    throw(ErrorException("Key not assignable"))
                 StaticKV.value!(k, val, key)
             end
             values
@@ -1145,7 +1239,7 @@ macro kvstore(struct_name, args...)
             readable_set_values = Any[]
             for name in StaticKV.keynames(k)
                 if StaticKV.isset(k, name) && StaticKV.is_readable(k, name)
-                    push!(readable_set_values, StaticKV.value(k, name))
+                    push!(readable_set_values, Base.getindex(k, name))
                 end
             end
             tuple(readable_set_values...)
@@ -1154,12 +1248,12 @@ macro kvstore(struct_name, args...)
         @inline function Base.pairs(k::$(struct_name))
             # Only include pairs for keys that are set and readable
             # Use tuple comprehension to avoid allocations
-            tuple(((name, StaticKV.value(k, name)) for name in StaticKV.keynames(k) if StaticKV.isset(k, name) && StaticKV.is_readable(k, name))...)
+            tuple(((name, Base.getindex(k, name)) for name in StaticKV.keynames(k) if StaticKV.isset(k, name) && StaticKV.is_readable(k, name))...)
         end
 
         @inline function Base.iterate(k::$(struct_name))
             # Get all readable, set keys as a tuple to avoid allocations
-            readable_set_keys = tuple(((name, StaticKV.value(k, name)) for name in StaticKV.keynames(k) if StaticKV.isset(k, name) && StaticKV.is_readable(k, name))...)
+            readable_set_keys = tuple(((name, Base.getindex(k, name)) for name in StaticKV.keynames(k) if StaticKV.isset(k, name) && StaticKV.is_readable(k, name))...)
 
             if isempty(readable_set_keys)
                 return nothing
@@ -1188,7 +1282,7 @@ macro kvstore(struct_name, args...)
 
         @inline function Base.get(k::$(struct_name), key::Symbol, default)
             if StaticKV.isset(k, key) && StaticKV.is_readable(k, key)
-                StaticKV.value(k, key)
+                Base.getindex(k, key)
             else
                 default
             end
@@ -1218,8 +1312,8 @@ macro kvstore(struct_name, args...)
                 # First check if key has mutable access
                 if StaticKV.is_mutable(k, key)
                     # Check if key type is isbits - isbits types are not mutable even with mutable access
-                    key_type = StaticKV.keytype(k, key)
-                    return key_type !== nothing && !isbitstype(key_type)
+                    val_type = valtype(k, key)
+                    return val_type !== nothing && !isbitstype(val_type)
                 else
                     return false
                 end
@@ -1241,26 +1335,26 @@ macro kvstore(struct_name, args...)
             key in StaticKV.keynames(k)
         end
 
-        @inline function Base.keytype(::Type{<:$(struct_name)}, s::Symbol)
+        @inline function Base.valtype(::Type{<:$(struct_name)}, s::Symbol)
             $(if length(key_names) == 0
                 :(nothing)
             else
                 result = :(nothing)
                 for (i, name) in enumerate(reverse(key_names))
-                    key_type = key_types[end-i+1]
-                    result = :(s === $(QuoteNode(name)) ? $(key_type) : $result)
+                    val_type = val_types[end-i+1]
+                    result = :(s === $(QuoteNode(name)) ? $(val_type) : $result)
                 end
                 result
             end)
         end
 
-        @inline Base.keytype(k::$(struct_name), s::Symbol) = Base.keytype(typeof(k), s)
+        @inline Base.valtype(k::$(struct_name), s::Symbol) = Base.valtype(typeof(k), s)
 
-        # Override getproperty and setproperty! for natural dot syntax access
+        # Override getproperty and setproperty! for natural dot syntax access with access control
         @inline function Base.getproperty(k::$(struct_name), name::Symbol)
             # Check if it's a managed key first
-            if name in StaticKV.keynames(k)
-                return StaticKV.value(k, name)
+            if haskey(k, name)
+                return Base.getindex(k, name)
             else
                 # Fall back to default field access for internal fields (like clock)
                 return getfield(k, name)
@@ -1269,8 +1363,8 @@ macro kvstore(struct_name, args...)
 
         @inline function Base.setproperty!(k::$(struct_name), name::Symbol, value)
             # Check if it's a managed key first
-            if name in StaticKV.keynames(k)
-                return StaticKV.value!(k, value, name)
+            if haskey(k, name)
+                return Base.setindex!(k, value, name)
             else
                 # Fall back to default field access for internal fields (like clock)
                 return setfield!(k, name, value)

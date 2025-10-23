@@ -3,14 +3,14 @@ using Test
 using StaticKV
 
 # Define all kvstore types at module level to avoid syntax errors
-@kvstore TestKeyType begin
+@kvstore TestValType begin
     string_key::String => "test"
     int_key::Int => 42
     vector_key::Vector{Float64} => [1.0, 2.0]
     complex_key::Dict{Symbol, Any} => Dict{Symbol, Any}(:test => "value")
 end
 
-@kvstore EmptyForKeyType begin
+@kvstore EmptyForValType begin
 end
 
 @kvstore TestBaseEdges begin
@@ -75,26 +75,26 @@ end
 
 function test_extended_edge_cases()
     
-    @testset "keytype Function Coverage" begin
-        kv = TestKeyType()
+    @testset "valtype Function Coverage" begin
+        kv = TestValType()
         
-        # Test keytype for existing keys
-        @test Base.keytype(kv, :string_key) == String
-        @test Base.keytype(kv, :int_key) == Int
-        @test Base.keytype(kv, :vector_key) == Vector{Float64}
-        @test Base.keytype(kv, :complex_key) == Dict{Symbol, Any}
+        # Test valtype for existing keys
+        @test Base.valtype(kv, :string_key) == String
+        @test Base.valtype(kv, :int_key) == Int
+        @test Base.valtype(kv, :vector_key) == Vector{Float64}
+        @test Base.valtype(kv, :complex_key) == Dict{Symbol, Any}
         
-        # Test keytype for non-existent keys (should return nothing)
-        @test Base.keytype(kv, :nonexistent) === nothing
+        # Test valtype for non-existent keys (should return nothing)
+        @test Base.valtype(kv, :nonexistent) === nothing
         
-        # Test keytype on type vs instance
-        @test Base.keytype(TestKeyType, :string_key) == String
-        @test Base.keytype(typeof(kv), :int_key) == Int
+        # Test valtype on type vs instance
+        @test Base.valtype(TestValType, :string_key) == String
+        @test Base.valtype(typeof(kv), :int_key) == Int
         
-        # Test keytype with empty kvstore
-        empty_kv = EmptyForKeyType()
-        @test Base.keytype(empty_kv, :anything) === nothing
-        @test Base.keytype(EmptyForKeyType, :anything) === nothing
+        # Test valtype with empty kvstore
+        empty_kv = EmptyForValType()
+        @test Base.valtype(empty_kv, :anything) === nothing
+        @test Base.valtype(EmptyForValType, :anything) === nothing
     end
     
     @testset "Base Interface Edge Cases" begin
